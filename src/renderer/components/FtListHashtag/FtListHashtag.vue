@@ -25,7 +25,10 @@
         class="title"
         :to="url"
       >
-        <h3 class="h3Title">
+        <h3
+          class="h3Title"
+          dir="auto"
+        >
           {{ title }}
         </h3>
       </router-link>
@@ -34,14 +37,14 @@
           v-if="channelCount"
           class="channelCount"
         >
-          {{ $tc('Global.Counts.Channel Count', channelCount, {count: formattedChannelCount}) }}
+          {{ $t('Global.Counts.Channel Count', {count: formattedChannelCount}, channelCount) }}
         </span>
         <span
           v-if="videoCount"
           class="videoCount"
         >
           <template v-if="channelCount"> • </template>
-          {{ $tc('Global.Counts.Video Count', videoCount, {count: formattedVideosCount}) }}
+          {{ $t('Global.Counts.Video Count', {count: formattedVideosCount}, videoCount) }}
         </span>
       </div>
     </div>
@@ -54,7 +57,7 @@ import { computed } from 'vue'
 
 import store from '../../store/index'
 
-import { formatNumber } from '../../helpers/utils'
+import { formatNumber, isNumberRounded } from '../../helpers/utils'
 
 const props = defineProps({
   data: {
@@ -82,11 +85,11 @@ const videoCount = props.data.videoCount
 const url = `/hashtag/${encodeURIComponent(title.substring(1))}`
 
 const formattedChannelCount = computed(() => {
-  return formatNumber(channelCount)
+  return formatNumber(channelCount, channelCount != null && isNumberRounded(channelCount) ? { notation: 'compact' } : undefined)
 })
 
 const formattedVideosCount = computed(() => {
-  return formatNumber(videoCount)
+  return formatNumber(videoCount, videoCount != null && isNumberRounded(videoCount) ? { notation: 'compact' } : undefined)
 })
 </script>
 

@@ -1,15 +1,14 @@
-// import the styles
-import Vue from 'vue'
+import { createApp } from 'vue'
 import i18n from './i18n/index'
 import router from './router/index'
 import store from './store/index'
 import App from './App.vue'
-import { IpcChannels } from '../constants'
-import { library } from '@fortawesome/fontawesome-svg-core'
+import { showExternalPlayerUnsupportedActionToast, showToast } from './helpers/utils'
+import { library } from './fontawesome-minimal'
+// import the styles
+import '@fortawesome/fontawesome-svg-core/styles.css'
 
 import { register as registerSwiper } from 'swiper/element'
-
-import { ObserveVisibility } from 'vue-observe-visibility'
 
 // Please keep the list of constants sorted by name
 // to avoid code conflict and duplicate entries
@@ -23,7 +22,9 @@ import {
   faArrowLeft,
   faArrowRight,
   faArrowUp,
+  faArrowUpRightFromSquare,
   faBars,
+  faBarsProgress,
   faBorderAll,
   faBookmark,
   faCheck,
@@ -36,7 +37,6 @@ import {
   faClockRotateLeft,
   faClone,
   faComment,
-  faCommentDots,
   faCopy,
   faDatabase,
   faDisplay,
@@ -56,12 +56,14 @@ import {
   faFileVideo,
   faFilm,
   faFilter,
+  faFilterCircleXmark,
   faFlask,
   faFire,
   faForward,
   faGamepad,
   faGauge,
   faGlobe,
+  faGraduationCap,
   faGrip,
   faHashtag,
   faHeart,
@@ -80,14 +82,15 @@ import {
   faMoneyCheckDollar,
   faMusic,
   faNetworkWired,
-  faNewspaper,
   faPalette,
   faPhotoFilm,
   faPlay,
   faPlus,
+  faPodcast,
   faQuestionCircle,
   faRandom,
   faRetweet,
+  faRotateRight,
   faRss,
   faSatelliteDish,
   faSave,
@@ -110,6 +113,7 @@ import {
   faTimesCircle,
   faTowerBroadcast,
   faTrash,
+  faTrophy,
   faUserCheck,
   faUserLock,
   faUsers,
@@ -129,13 +133,9 @@ import {
   faBitcoin,
   faGithub,
   faMastodon,
+  faMatrix,
 } from '@fortawesome/free-brands-svg-icons'
 import { FontAwesomeIcon, FontAwesomeLayers } from '@fortawesome/vue-fontawesome'
-import PortalVue from 'portal-vue'
-
-Vue.config.devtools = process.env.NODE_ENV === 'development'
-Vue.config.performance = process.env.NODE_ENV === 'development'
-Vue.config.productionTip = process.env.NODE_ENV === 'development'
 
 // Please keep the list of constants sorted by name
 // to avoid code conflict and duplicate entries
@@ -150,7 +150,9 @@ library.add(
   faArrowLeft,
   faArrowRight,
   faArrowUp,
+  faArrowUpRightFromSquare,
   faBars,
+  faBarsProgress,
   faBorderAll,
   faBookmark,
   faCheck,
@@ -163,7 +165,6 @@ library.add(
   faClockRotateLeft,
   faClone,
   faComment,
-  faCommentDots,
   faCopy,
   faDatabase,
   faDisplay,
@@ -183,12 +184,14 @@ library.add(
   faFileVideo,
   faFilm,
   faFilter,
+  faFilterCircleXmark,
   faFlask,
   faFire,
   faForward,
   faGamepad,
   faGauge,
   faGlobe,
+  faGraduationCap,
   faGrip,
   faHashtag,
   faHeart,
@@ -207,14 +210,15 @@ library.add(
   faMoneyCheckDollar,
   faMusic,
   faNetworkWired,
-  faNewspaper,
   faPalette,
   faPhotoFilm,
   faPlay,
   faPlus,
+  faPodcast,
   faQuestionCircle,
   faRandom,
   faRetweet,
+  faRotateRight,
   faRss,
   faSatelliteDish,
   faSave,
@@ -237,6 +241,7 @@ library.add(
   faTimesCircle,
   faTowerBroadcast,
   faTrash,
+  faTrophy,
   faUserCheck,
   faUserLock,
   faUsers,
@@ -256,32 +261,44 @@ library.add(
   faGithub,
   faBitcoin,
   faMastodon,
+  faMatrix,
 )
 
 registerSwiper()
 
-Vue.component('FontAwesomeIcon', FontAwesomeIcon)
-Vue.component('FontAwesomeLayers', FontAwesomeLayers)
-Vue.directive('observe-visibility', ObserveVisibility)
+const app = createApp(App)
 
-/* eslint-disable-next-line no-new */
-new Vue({
-  el: '#app',
-  router,
-  store,
-  i18n,
-  render: h => h(App)
+app.config.performance = process.env.NODE_ENV === 'development'
+
+app
+  .component('FontAwesomeIcon', FontAwesomeIcon)
+  .component('FontAwesomeLayers', FontAwesomeLayers)
+
+  .use(router)
+  .use(store)
+  .use(i18n)
+
+router.isReady().then(() => {
+  app.mount('#app')
 })
-Vue.use(PortalVue)
 
 // to avoid accessing electron api from web app build
 if (process.env.IS_ELECTRON) {
-  const { ipcRenderer } = require('electron')
-
-  // handle menu event updates from main script
-  ipcRenderer.on(IpcChannels.CHANGE_VIEW, (event, data) => {
-    if (data.route) {
-      router.push(data.route)
-    }
+  window.ftElectron.handleChangeView((route) => {
+    router.push(route)
   })
+
+  window.ftElectron.handleOpenInExternalPlayerResult(
+    (externalPlayer, unsupportedActions, isPlaylist) => {
+      for (const action of unsupportedActions) {
+        showExternalPlayerUnsupportedActionToast(externalPlayer, action)
+      }
+
+      const videoOrPlaylist = isPlaylist
+        ? i18n.global.t('Video.External Player.playlist')
+        : i18n.global.t('Video.External Player.video')
+
+      showToast(i18n.global.t('Video.External Player.OpeningTemplate', { videoOrPlaylist, externalPlayer }))
+    }
+  )
 }

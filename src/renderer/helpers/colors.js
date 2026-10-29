@@ -33,6 +33,8 @@ export const colors = [
   { name: 'CatppuccinFrappeSapphire', value: '#85c1dc' },
   { name: 'CatppuccinFrappeBlue', value: '#8caaee' },
   { name: 'CatppuccinFrappeLavender', value: '#babbf1' },
+  { name: 'CatppuccinLatteMauve', value: '#8839ef' },
+  { name: 'CatppuccinLatteRed', value: '#d20f39' },
   { name: 'CatppuccinMochaRosewater', value: '#F5E0DC' },
   { name: 'CatppuccinMochaFlamingo', value: '#F2CDCD' },
   { name: 'CatppuccinMochaPink', value: '#F5C2E7' },
@@ -97,10 +99,27 @@ export function getRandomColor() {
 }
 
 export function calculateColorLuminance(colorValue) {
-  const cutHex = colorValue.substring(1, 7)
-  const colorValueR = parseInt(cutHex.substring(0, 2), 16)
-  const colorValueG = parseInt(cutHex.substring(2, 4), 16)
-  const colorValueB = parseInt(cutHex.substring(4, 6), 16)
+  let colorValues
+
+  if (colorValue.startsWith('#')) {
+    const cutHex = colorValue.length === 4
+      ? colorValue.slice(1).split('').map(value => value + value).join('')
+      : colorValue.substring(1, 7)
+
+    colorValues = [
+      parseInt(cutHex.substring(0, 2), 16),
+      parseInt(cutHex.substring(2, 4), 16),
+      parseInt(cutHex.substring(4, 6), 16)
+    ]
+  } else {
+    colorValues = colorValue.match(/\d+(\.\d+)?/g)?.slice(0, 3).map(Number)
+  }
+
+  if (!colorValues || colorValues.some(value => isNaN(value))) {
+    return '#FFFFFF'
+  }
+
+  const [colorValueR, colorValueG, colorValueB] = colorValues
 
   const luminance = (0.299 * colorValueR + 0.587 * colorValueG + 0.114 * colorValueB) / 255
 

@@ -17,8 +17,7 @@
               tabindex="0"
               role="button"
               @click="profileBgColor = color"
-              @keydown.space.prevent="profileBgColor = color"
-              @keydown.enter.prevent="profileBgColor = color"
+              @keydown.enter.space.prevent="profileBgColor = color"
             />
           </FtFlexBox>
           <div class="customColorSection">
@@ -48,7 +47,7 @@
               :show-action-button="false"
               :maxlength="100"
               @input="profileName = $event"
-              @keydown.enter.native="saveProfile"
+              @keydown.enter="saveProfile"
             />
           </div>
           <div>
@@ -60,6 +59,7 @@
               >
                 <div
                   class="initial"
+                  dir="auto"
                 >
                   {{ profileInitial }}
                 </div>
@@ -109,19 +109,19 @@
 
 <script setup>
 import { computed, ref, watch } from 'vue'
-import { useI18n } from '../../composables/use-i18n-polyfill'
+import { useI18n } from 'vue-i18n'
 
 import FtCard from '../ft-card/ft-card.vue'
 import FtPrompt from '../FtPrompt/FtPrompt.vue'
 import FtFlexBox from '../ft-flex-box/ft-flex-box.vue'
-import FtInput from '../ft-input/ft-input.vue'
-import FtButton from '../ft-button/ft-button.vue'
+import FtInput from '../FtInput/FtInput.vue'
+import FtButton from '../FtButton/FtButton.vue'
 
 import store from '../../store/index'
 
 import { MAIN_PROFILE_ID } from '../../../constants'
 import { calculateColorLuminance, colors } from '../../helpers/colors'
-import { showToast } from '../../helpers/utils'
+import { deepCopy, showToast } from '../../helpers/utils'
 import { getFirstCharacter } from '../../helpers/strings'
 
 /**
@@ -182,7 +182,7 @@ const translatedProfileName = computed(() => {
 
 const profileInitial = computed(() => {
   return profileName.value
-    ? getFirstCharacter(translatedProfileName.value, locale.value).toUpperCase()
+    ? getFirstCharacter(translatedProfileName.value, locale.value)
     : ''
 })
 
@@ -204,7 +204,7 @@ function saveProfile() {
     name: profileName.value,
     bgColor: profileBgColor.value,
     textColor: profileTextColor.value,
-    subscriptions: props.profile.subscriptions
+    subscriptions: deepCopy(props.profile.subscriptions)
   }
 
   if (!props.isNew) {

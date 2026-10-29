@@ -4,7 +4,7 @@
 
 FreeTube is an open source desktop YouTube player built with privacy in mind.
 Use YouTube without advertisements and prevent Google from tracking you with their cookies and JavaScript.
-Available for Windows (10 and later), Mac (macOS 11 and later) & Linux thanks to Electron.
+Available for Windows (10 and later), Mac (macOS 12 and later) & Linux thanks to Electron.
 
 <p align="center"><a href="https://github.com/FreeTubeApp/FreeTube/releases">Download FreeTube</a></p>
 <p align="center">
@@ -18,7 +18,7 @@ Available for Windows (10 and later), Mac (macOS 11 and later) & Linux thanks to
 
 <hr>
 <p align="center"><a href="#screenshots">Screenshots</a> &bull; <a href="#how-does-it-work">How does it work?</a> &bull; <a href="#features">Features</a> &bull; <a href="#download-links">Download Links</a> &bull; <a href="#contributing">Contributing</a> &bull; <a href="#localization">Localization</a> &bull; <a href="#contact">Contact</a> &bull; <a href="#donate">Donate</a> &bull; <a href="#license">License</a></p>
-<p align="center"><a href="https://freetubeapp.io/">Website</a> &bull; <a href="https://blog.freetubeapp.io/">Blog</a> &bull; <a href="https://docs.freetubeapp.io/">Documentation</a> &bull; <a href="https://docs.freetubeapp.io/faq/">FAQ</a> &bull; <a href="https://github.com/FreeTubeApp/FreeTube/discussions">Discussions</a></p>
+<p align="center"><a href="https://freetubeapp.io/">Website</a> &bull; <a href="https://docs.freetubeapp.io/">Documentation</a> &bull; <a href="https://docs.freetubeapp.io/faq/">FAQ</a> &bull; <a href="https://github.com/FreeTubeApp/FreeTube/discussions">Discussions</a></p>
 <hr>
 
 > [!NOTE] 
@@ -27,11 +27,21 @@ Available for Windows (10 and later), Mac (macOS 11 and later) & Linux thanks to
 > If you have an idea or if you found a bug, please submit a [GitHub issue](https://github.com/FreeTubeApp/FreeTube/issues/new/choose) so that we can track it.  Please [search the existing issues](https://github.com/FreeTubeApp/FreeTube/issues?q=is%3Aissue+sort%3Arelevance-desc) before submitting to prevent duplicates!
 
 ## Screenshots
-<img src="https://i.imgur.com/zFgZUUV.png" width=300> <img src="https://i.imgur.com/9evYHgN.png" width=300> <img src="https://i.imgur.com/yT2UzPa.png" width=300> <img src="https://i.imgur.com/47zIEt4.png" width=300> <img src="https://i.imgur.com/hFB2fKC.png" width=300>
+| The main FreeTube window                                                                         |
+|--------------------------------------------------------------------------------------------------|
+| ![](https://raw.githubusercontent.com/FreeTubeApp/FreeTubeApp.io/master/src/images/FreeTube1.png)|
+
+| Watching a video                                                                                 |
+|--------------------------------------------------------------------------------------------------|
+| ![](https://raw.githubusercontent.com/FreeTubeApp/FreeTubeApp.io/master/src/images/FreeTube2.png)|
+
+| Settings                                                                                         |
+|--------------------------------------------------------------------------------------------------|
+| ![](https://raw.githubusercontent.com/FreeTubeApp/FreeTubeApp.io/master/src/images/FreeTube3.png)|
 
 ## How does it work?
 FreeTube uses a built in extractor to grab and serve data / videos. The [Invidious API](https://github.com/iv-org/invidious) can also optionally be used. FreeTube does not use any official APIs to obtain data. While YouTube can still see your video requests, it can no
-longer track you using cookies or JavaScript. Your subscriptions and history are stored locally on your computer and never sent out.
+longer track you using cookies or JavaScript. Your subscriptions, playlists and history are stored locally on your computer and never sent out.
 
 > [!IMPORTANT]  
 > Using a VPN or Tor is highly recommended to hide your IP while using FreeTube.
@@ -42,13 +52,14 @@ longer track you using cookies or JavaScript. Your subscriptions and history are
 * Two extractor APIs to choose from (Built in or Invidious)
 * Subscribe to channels without an account
 * Connect to an externally setup proxy such as Tor
-* View and search your local subscriptions, history, and saved videos
+* View and search your local subscriptions, playlists and history
 * Organize your subscriptions into "Profiles" to create a more focused feed
 * Export & import subscriptions
-* Youtube Trending
-* Youtube Chapters
+* YouTube Trending
+* YouTube Chapters
 * Most popular videos page based on the set Invidious instance
-* SponsorBlock 
+* SponsorBlock
+* DeArrow
 * Open videos from your browser directly into FreeTube (with extension)
 * Watch videos using an external player
 * Full Theme support
@@ -58,23 +69,23 @@ longer track you using cookies or JavaScript. Your subscriptions and history are
 * Keyboard shortcuts
 * Option to show only family friendly content
 * Show/hide functionality or elements within the app using the distraction free settings
-* View channel community posts
+* View channel posts
 
 ### Browser Extensions
 The following extensions open YouTube links directly in FreeTube:
 
-- [LibRedirect](https://libredirect.github.io/)
+- [LibRedirect](https://libredirect.manerakai.com/)
 - [RedirectTube](https://github.com/MStankiewiczOfficial/RedirectTube)
 
 LibRedirect automatically redirect YouTube links to FreeTube.
 > [!IMPORTANT]
 > To ensure proper functionality, select FreeTube as Frontend in the Services settings of the extension.
 
-RedirectTube, doesn’t automatically open YouTube links in FreeTube. Instead, it adds buttons to the toolbar and context menu, which you can click to open videos in FreeTube manually.
+RedirectTube, doesn’t automatically open YouTube links in FreeTube (although this feature can be enabled in the settings). Instead, it adds buttons to the toolbar and context menu, which you can click to open videos in FreeTube manually.
 
-- Download LibRedirect from [Mozilla Add-ons](https://addons.mozilla.org/firefox/addon/libredirect/) (for Firefox based-browsers) or [developer's website](https://libredirect.github.io/download_chromium.html) (for Chrome and Chromium-based browsers).
+- Download LibRedirect from [Mozilla Add-ons](https://addons.mozilla.org/firefox/addon/libredirect/) (for Firefox based-browsers) or [developer's website](https://libredirect.manerakai.com/download_chromium.html) (for Chrome and Chromium-based browsers).
 
-- Download RedirectTube from [Mozilla Add-ons](https://addons.mozilla.org/firefox/addon/redirecttube/) (for Firefox based-browsers).
+- Download RedirectTube from [Mozilla Add-ons](https://addons.mozilla.org/firefox/addon/redirecttube/) (for Firefox based-browsers) or [Chrome Web Store](https://chromewebstore.google.com/detail/redirecttube/jpbaggklodpddjcadlebabhiopjkjfjh) (for Chrome and Chromium-based browsers).
 
 > [!NOTE]
 > These extensions do not work on Linux portable builds!
@@ -85,7 +96,7 @@ RedirectTube, doesn’t automatically open YouTube links in FreeTube. Instead, i
 ### Official Downloads
 
 > [!CAUTION]
-> FreeTube is only supported on Windows 10 and later, macOS 11 and above, and various Linux distributions. Installing it on unsupported systems may result in unexpected issues.
+> FreeTube is only supported on Windows 10 and later, macOS 12 and above, and various Linux distributions. Installing it on unsupported systems may result in unexpected issues.
 
 * [GitHub Releases](https://github.com/FreeTubeApp/FreeTube/releases)
 
@@ -104,31 +115,13 @@ The first build with a green check mark is the latest build.
 > [!IMPORTANT]
 > You will need to have a GitHub account to download these builds.
 
-### Unofficial Downloads
-> [!WARNING]
-> These builds are maintained by the community. While they should be safe, download at your own risk. There may be issues with using these versus the official builds. Any issues specific with these builds should be sent to their respective maintainer. Make sure u always try an [official download](https://github.com/freetubeapp/freetube/#official-downloads) before reporting your issue to us!
-
-* Arch User Repository (AUR): [Download](https://aur.archlinux.org/packages/freetube-bin/)
-
-* Chocolatey: [Download](https://chocolatey.org/packages/freetube/)
+### Projects maintained by individual FreeTube team members
+* Homebrew FreeTube (Apple Silicon only): [Install](https://github.com/PikachuEXE/homebrew-FreeTube)
 
 * FreeTubeAndroid (FreeTube port for Android and PWA): [Download](https://github.com/MarmadileManteater/FreeTubeAndroid/releases) and [Source Code](https://github.com/MarmadileManteater/FreeTubeAndroid)
 
-* Homebrew Formulae (Mac only): [Download](https://formulae.brew.sh/cask/freetube)
-
-* makedeb Package Repository (MPR): [Download](https://mpr.makedeb.org/packages/freetube-bin)
-
-* Nix Packages: [Download](https://search.nixos.org/packages?query=freetube)
-
-* PortableApps (Windows Only): [Download](https://github.com/rddim/FreeTubePortable/releases) and [Source Code](https://github.com/rddim/FreeTubePortable)
-
-* Scoop (Windows Only): [Usage](https://github.com/ScoopInstaller/Scoop)
-
-* Snap: [Download](https://snapcraft.io/freetube) and [Source Code](https://git.launchpad.net/freetube)
-
-* WAPT: [Download](https://wapt.tranquil.it/store/tis-freetube)
-
-* Windows Package Manager (winget): [Usage](https://docs.microsoft.com/en-us/windows/package-manager/winget/)
+> [!IMPORTANT]
+> These projects are related to FreeTube and are maintained by individual members of the FreeTube team. While they are not part of the main FreeTube project, they may be useful to FreeTube users. There may be issues when using these projects compared to the official builds. Any issues specific to these builds should be reported to their respective maintainers. Make sure you always try an [official download](https://github.com/freetubeapp/freetube/#official-downloads) before reporting your issue to us!
 
 ## Contributing
 Thank you very much to the [People and Projects](https://docs.freetubeapp.io/credits/) that make FreeTube possible!
@@ -149,7 +142,7 @@ We are actively looking for translations!  We use [Weblate](https://hosted.webla
 For the Linux Flatpak, the desktop entry comment string can be translated at our [Flatpak repository](https://github.com/flathub/io.freetubeapp.FreeTube/blob/master/io.freetubeapp.FreeTube.desktop).
 
 ## Contact
-If you ever have any questions, feel free to ask it on our [Discussions](https://github.com/FreeTubeApp/FreeTube/discussions) page.  Alternatively, you can email us at FreeTubeApp@protonmail.com or you can join our [Matrix Community](https://matrix.to/#/#freetube:matrix.org).  
+If you ever have any questions, feel free to ask it on our [Discussions](https://github.com/FreeTubeApp/FreeTube/discussions) page.  Alternatively, you can join our [Matrix Space](https://matrix.to/#/#freetubeapp:matrix.org).  
 
 > [!IMPORTANT]
 > Don't forget to check out the [rules](https://docs.freetubeapp.io/community/matrix/) before joining.

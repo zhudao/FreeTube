@@ -16,6 +16,12 @@
           :default-value="showFamilyFriendlyOnly"
           @change="updateShowFamilyFriendlyOnly"
         />
+        <FtToggleSwitch
+          :label="$t('Settings.Parental Control Settings.Disable Channel Links')"
+          compact
+          :default-value="disableChannelLinks"
+          @change="updateDisableChannelLinks"
+        />
       </div>
       <div class="switchColumn">
         <FtToggleSwitch
@@ -23,6 +29,12 @@
           compact
           :default-value="hideSearchBar"
           @change="updateHideSearchBar"
+        />
+        <FtToggleSwitch
+          :label="$t('Settings.Parental Control Settings.Hide Uploader on Watch page')"
+          compact
+          :default-value="hideUploader"
+          @change="updateHideUploader"
         />
       </div>
     </div>
@@ -33,7 +45,7 @@
 import { computed } from 'vue'
 
 import FtSettingsSection from './FtSettingsSection/FtSettingsSection.vue'
-import FtToggleSwitch from './ft-toggle-switch/ft-toggle-switch.vue'
+import FtToggleSwitch from './FtToggleSwitch/FtToggleSwitch.vue'
 
 import store from '../store/index'
 
@@ -45,8 +57,16 @@ const hideUnsubscribeButton = computed(() => {
   return store.getters.getHideUnsubscribeButton
 })
 
+const hideUploader = computed(() => {
+  return store.getters.getHideUploader
+})
+
 const showFamilyFriendlyOnly = computed(() => {
   return store.getters.getShowFamilyFriendlyOnly
+})
+
+const disableChannelLinks = computed(() => {
+  return store.getters.getDisableChannelLinks
 })
 
 /**
@@ -66,7 +86,21 @@ function updateHideUnsubscribeButton(value) {
 /**
  * @param {boolean} value
  */
+function updateHideUploader(value) {
+  store.dispatch('updateHideUploader', value)
+}
+
+/**
+ * @param {boolean} value
+ */
 function updateShowFamilyFriendlyOnly(value) {
   store.dispatch('updateShowFamilyFriendlyOnly', value)
+}
+
+/**
+ * @param {boolean} value
+ */
+function updateDisableChannelLinks(value) {
+  store.dispatch('updateDisableChannelLinks', value)
 }
 </script>

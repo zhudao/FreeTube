@@ -95,11 +95,11 @@
 
 <script setup>
 import { computed, ref } from 'vue'
-import { useI18n } from '../composables/use-i18n-polyfill'
+import { useI18n } from 'vue-i18n'
 
 import FtSettingsSection from './FtSettingsSection/FtSettingsSection.vue'
-import FtSelect from './ft-select/ft-select.vue'
-import FtToggleSwitch from './ft-toggle-switch/ft-toggle-switch.vue'
+import FtSelect from './FtSelect/FtSelect.vue'
+import FtToggleSwitch from './FtToggleSwitch/FtToggleSwitch.vue'
 import FtSlider from './FtSlider/FtSlider.vue'
 import FtFlexBox from './ft-flex-box/ft-flex-box.vue'
 import FtPrompt from './FtPrompt/FtPrompt.vue'
@@ -107,7 +107,6 @@ import FtPrompt from './FtPrompt/FtPrompt.vue'
 import store from '../store/index'
 
 import { colors } from '../helpers/colors'
-import { IpcChannels } from '../../constants'
 import { useColorTranslations } from '../composables/colors'
 
 const { t } = useI18n()
@@ -129,6 +128,7 @@ const BASE_THEME_VALUES = [
   'pastelPink',
   // Third group
   'catppuccinFrappe',
+  'catppuccinLatte',
   'catppuccinMocha',
   'dracula',
   'everforestDarkHard',
@@ -155,6 +155,7 @@ const baseThemeNames = computed(() => [
   t('Settings.Theme Settings.Base Theme.Pastel Pink'),
   // Third group
   t('Settings.Theme Settings.Base Theme.Catppuccin Frappe'),
+  t('Settings.Theme Settings.Base Theme.Catppuccin Latte'),
   t('Settings.Theme Settings.Base Theme.Catppuccin Mocha'),
   t('Settings.Theme Settings.Base Theme.Dracula'),
   t('Settings.Theme Settings.Base Theme.Everforest Dark Hard'),
@@ -224,7 +225,7 @@ function updateSecColor(value) {
 
 /** @type {import('vue').ComputedRef<boolean>} */
 const expandSideBar = computed(() => {
-  return store.getters.getexpandSideBar
+  return store.getters.getExpandSideBar
 })
 
 /** @type {import('vue').ComputedRef<boolean>} */
@@ -317,8 +318,7 @@ function handleSmoothScrolling(value) {
     store.dispatch('updateDisableSmoothScrolling',
       disableSmoothScrollingToggleValue.value
     ).then(() => {
-      const { ipcRenderer } = require('electron')
-      ipcRenderer.send(IpcChannels.RELAUNCH_REQUEST)
+      window.ftElectron.relaunch()
     })
   }
 }

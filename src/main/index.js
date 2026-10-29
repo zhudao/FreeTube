@@ -1,7 +1,8 @@
 import {
   app, BrowserWindow, dialog, Menu, ipcMain,
   powerSaveBlocker, screen, session, shell,
-  nativeTheme, net, protocol, clipboard
+  nativeTheme, net, protocol, clipboard,
+  Tray, ClipboardItem,
 } from 'electron'
 import path from 'path'
 import cp from 'child_process'
@@ -12,11 +13,13 @@ import {
   SyncEvents,
   ABOUT_BITCOIN_ADDRESS,
   KeyboardShortcuts,
-  DefaultFolderKind,
+  SEARCH_CHAR_LIMIT,
+  LIGHT_BASE_THEMES,
+  DARK_BASE_THEMES,
 } from '../constants'
 import * as baseHandlers from '../datastores/handlers/base'
 import { extractExpiryTimestamp, ImageCache } from './ImageCache'
-import { existsSync } from 'fs'
+import { constants as fsConstants, existsSync } from 'fs'
 import asyncFs from 'fs/promises'
 import { promisify } from 'util'
 import { brotliDecompress } from 'zlib'
@@ -24,7 +27,9 @@ import { brotliDecompress } from 'zlib'
 import contextMenu from 'electron-context-menu'
 
 import packageDetails from '../../package.json'
+import { handleOpenInExternalPlayer } from './externalPlayer'
 import { generatePoToken } from './poTokenGenerator'
+import { isFreeTubeUrl } from './utils'
 
 const brotliDecompressAsync = promisify(brotliDecompress)
 
@@ -57,22 +62,35 @@ Options:
 
 function runApp() {
   /** @type {Set<string>} */
-  let ALLOWED_RENDERER_FILES
-
-  if (process.env.NODE_ENV === 'production') {
+  const ALLOWED_RENDERER_FILES = process.env.NODE_ENV === 'production'
     // __FREETUBE_ALLOWED_PATHS__ is replaced by the injectAllowedPaths.mjs script
-    // eslint-disable-next-line no-undef
-    ALLOWED_RENDERER_FILES = new Set(__FREETUBE_ALLOWED_PATHS__)
+    ? new Set(__FREETUBE_ALLOWED_PATHS__)
+    : new Set()
 
-    protocol.registerSchemesAsPrivileged([{
-      scheme: 'app',
+  protocol.registerSchemesAsPrivileged([
+    {
+      scheme: 'imagecache',
       privileges: {
-        standard: true,
         secure: true,
-        supportFetchAPI: true
+        corsEnabled: true
       }
-    }])
-  }
+    },
+    ...(process.env.NODE_ENV === 'production'
+      ? [{
+          scheme: 'app',
+          privileges: {
+            standard: true,
+            secure: true,
+            supportFetchAPI: true
+          }
+        }]
+      : []),
+  ])
+
+  const ROOT_APP_URL = process.env.NODE_ENV === 'development' ? 'http://localhost:9080' : 'app://bundle/index.html'
+
+  let backendPreference = 'local'
+  let backendFallback = true
 
   contextMenu({
     showSearchWithGoogle: false,
@@ -120,12 +138,17 @@ function runApp() {
         }
       }
 
-      const copy = (url) => {
+      const copy = async (url) => {
         if (parameters.linkText) {
-          clipboard.write({
-            bookmark: parameters.linkText,
-            text: url
-          })
+          await clipboard.write([
+            new ClipboardItem({
+              'text/plain': url,
+              'electron application/bookmark': {
+                title: parameters.linkText,
+                url,
+              },
+            })
+          ])
         } else {
           clipboard.writeText(url)
         }
@@ -199,31 +222,70 @@ function runApp() {
         }
       }
 
+      const textShortEnoughForSearch = parameters.selectionText.trim().length <= SEARCH_CHAR_LIMIT
+
       return [
         {
           label: 'Copy Lin&k',
           visible: visible && !isInAppUrl,
-          click: () => {
-            copy(parameters.linkURL)
+          click: async () => {
+            await copy(parameters.linkURL)
           }
         },
         {
           label: 'Copy YouTube Link',
           visible: visible && isInAppUrl,
-          click: () => {
-            copy(transformURL(true))
+          click: async () => {
+            await copy(transformURL(true))
           }
         },
         {
           label: 'Copy Invidious Link',
-          visible: visible && isInAppUrl,
-          click: () => {
-            copy(transformURL(false))
+          visible: visible && isInAppUrl && (backendPreference === 'invidious' || backendFallback),
+          click: async () => {
+            await copy(transformURL(false))
           }
-        }
+        },
+        // Only show search in new window for
+        // Static text or link
+        // NOT internal link
+        // NOT link with no customized link text
+        // NOT link for timestamp
+        {
+          label: textShortEnoughForSearch ? 'Search “{selection}” in a New Window' : `“{selection}” is too long for search (> ${SEARCH_CHAR_LIMIT} chars)`,
+          enabled: textShortEnoughForSearch,
+          visible: (
+            !isInAppUrl &&
+            !parameters.isEditable &&
+            (parameters.linkURL != null && !parameters.linkURL.includes(parameters.selectionText) && !(/(\d{1,2}:)*\d{1,2}:\d{2}/.test(parameters.linkText))) &&
+            parameters.selectionText.trim().length > 0
+          ),
+          click: () => {
+            const queryText = parameters.selectionText.trim()
+            createWindow({
+              replaceMainWindow: false,
+              windowStartupUrl: `${ROOT_APP_URL}#/search/${encodeURIComponent(queryText)}`,
+              searchQueryText: queryText,
+              showWindowNow: true,
+            })
+          }
+        },
       ]
-    }
+    },
   })
+
+  if (process.platform === 'win32') {
+    app.setUserTasks([
+      {
+        program: process.execPath,
+        arguments: '--new-window',
+        iconPath: process.execPath,
+        iconIndex: 0,
+        title: 'New Window',
+        description: 'Open New Window'
+      }
+    ])
+  }
 
   // disable electron warning
   process.env.ELECTRON_DISABLE_SECURITY_WARNINGS = 'true'
@@ -231,6 +293,11 @@ function runApp() {
 
   let mainWindow
   let startupUrl
+  let tray = null
+  let trayOnMinimize = false
+  let trayWindows = []
+  const trayMaximizedWindows = {}
+  const isTrayOnMinimizeSupported = process.platform !== 'darwin' && (process.platform !== 'linux' || app.commandLine.getSwitchValue('ozone-platform') !== 'wayland')
 
   const userDataPath = app.getPath('userData')
 
@@ -244,6 +311,12 @@ function runApp() {
     // we've got a custom image cache to make up for disabling the http cache
     // experimental as it increases RAM use in favour of reduced disk use
     app.commandLine.appendSwitch('disable-http-cache')
+  }
+
+  const DISABLE_HARDWARE_ACCELERATION_PATH = `${userDataPath}/experiment-disable-hardware-acceleration`
+  const disableHardwareAcceleration = existsSync(DISABLE_HARDWARE_ACCELERATION_PATH)
+  if (disableHardwareAcceleration) {
+    app.commandLine.appendSwitch('disable-gpu')
   }
 
   const PLAYER_CACHE_PATH = `${userDataPath}/player_cache`
@@ -262,34 +335,81 @@ function runApp() {
   }
 
   if (process.env.NODE_ENV !== 'development') {
-    app.on('second-instance', (_, commandLine, __) => {
+    app.on('second-instance', async (_, commandLine, __) => {
       // Someone tried to run a second instance
       if (typeof commandLine !== 'undefined') {
-        const url = getLinkUrl(commandLine)
-        if (mainWindow && mainWindow.webContents) {
-          if (commandLine.includes('--new-window')) {
-            // The user wants to create a new window in the existing instance
-            if (url) startupUrl = url
-            createWindow({
-              showWindowNow: true,
-              replaceMainWindow: true,
-            })
-          } else {
-            // Just focus the main window (instead of starting a new instance)
-            if (mainWindow.isMinimized()) mainWindow.restore()
-            mainWindow.focus()
+        const newStartupUrl = getLinkUrl(commandLine)
 
-            if (url) mainWindow.webContents.send(IpcChannels.OPEN_URL, url)
-          }
-        } else {
-          if (url) startupUrl = url
-          createWindow()
+        if (!(mainWindow && mainWindow.webContents)) {
+          startupUrl = newStartupUrl
+          if (app.isReady()) await createWindow()
+          return
         }
+
+        if (commandLine.includes('--new-window')) {
+          // The user wants to create a new window in the existing instance
+          if (newStartupUrl) startupUrl = newStartupUrl
+          await createWindow({
+            showWindowNow: true,
+            replaceMainWindow: true,
+          })
+          return
+        }
+
+        const openDeepLinksInNewWindow = (await baseHandlers.settings._findOne('openDeepLinksInNewWindow'))?.value
+        if (!openDeepLinksInNewWindow) {
+          // Just focus the main window (instead of starting a new instance)
+          if (mainWindow.isMinimized()) {
+            if (isTrayOnMinimizeSupported && trayOnMinimize) {
+              trayClick(mainWindow)
+            } else {
+              mainWindow.restore()
+            }
+          }
+          mainWindow.focus()
+          if (newStartupUrl) mainWindow.webContents.send(IpcChannels.OPEN_URL, newStartupUrl)
+          return
+        }
+
+        const newWindow = await createWindow({
+          replaceMainWindow: false,
+          showWindowNow: true,
+        })
+
+        /**
+         * @param {import('electron').IpcMainEvent} event
+         */
+        const readyHandler = (event) => {
+          if (isFreeTubeUrl(event.senderFrame.url)) {
+            newWindow.webContents.ipc.off(IpcChannels.APP_READY, readyHandler)
+
+            event.reply(IpcChannels.OPEN_URL, newStartupUrl)
+          }
+        }
+
+        newWindow.webContents.ipc.on(IpcChannels.APP_READY, readyHandler)
       }
     })
   }
 
+  let proxyUrl
+
   app.on('ready', async (_, __) => {
+    if (process.platform === 'darwin') {
+      const dockMenu = Menu.buildFromTemplate([
+        {
+          label: 'New Window',
+          click: () => {
+            createWindow({
+              replaceMainWindow: false,
+              showWindowNow: true
+            })
+          }
+        }
+      ])
+      app.dock.setMenu(dockMenu)
+    }
+
     if (process.env.NODE_ENV === 'production') {
       protocol.handle('app', async (request) => {
         if (request.method !== 'GET') {
@@ -339,23 +459,43 @@ function runApp() {
     // FreeTube needs the following permissions:
     // - "fullscreen": So that the video player can enter full screen
     // - "clipboard-sanitized-write": To allow the user to copy video URLs and error messages
+    // - "fileSystem" Needed for the Web File System API (e.g. importing and exporting data)
 
-    session.defaultSession.setPermissionCheckHandler((webContents, permission, requestingOrigin) => {
+    session.defaultSession.setPermissionCheckHandler((webContents, permission, requestingOrigin, details) => {
       if (!isFreeTubeUrl(requestingOrigin)) {
         return false
       }
 
-      return permission === 'fullscreen' || permission === 'clipboard-sanitized-write'
+      return (
+        permission === 'fullscreen' ||
+        permission === 'clipboard-sanitized-write' ||
+        (permission === 'fileSystem' && !details.isDirectory)
+      )
     })
 
-    session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
+    session.defaultSession.setPermissionRequestHandler((webContents, permission, callback, details) => {
       if (!isFreeTubeUrl(webContents.getURL())) {
         // eslint-disable-next-line n/no-callback-literal
         callback(false)
         return
       }
 
-      callback(permission === 'fullscreen' || permission === 'clipboard-sanitized-write')
+      callback(
+        permission === 'fullscreen' ||
+        permission === 'clipboard-sanitized-write' ||
+        (permission === 'fileSystem' && !details.isDirectory)
+      )
+    })
+
+    session.defaultSession.on('file-system-access-restricted', (event, details, callback) => {
+      if (!isFreeTubeUrl(details.origin)) {
+        // eslint-disable-next-line n/no-callback-literal
+        callback('deny')
+        return
+      }
+
+      // eslint-disable-next-line n/no-callback-literal
+      callback(details.isDirectory ? 'deny' : 'allow')
     })
 
     let docArray
@@ -391,6 +531,17 @@ function runApp() {
           case 'proxyPort':
             proxyPort = doc.value
             break
+          case 'backendFallback':
+            backendFallback = doc.value
+            break
+          case 'backendPreference':
+            backendPreference = doc.value
+            break
+          case 'hideToTrayOnMinimize':
+            if (isTrayOnMinimizeSupported) {
+              trayOnMinimize = doc.value
+            }
+            break
         }
       })
     }
@@ -402,8 +553,10 @@ function runApp() {
     }
 
     if (useProxy) {
+      proxyUrl = `${proxyProtocol}://${proxyHostname}:${proxyPort}`
+
       session.defaultSession.setProxy({
-        proxyRules: `${proxyProtocol}://${proxyHostname}:${proxyPort}`
+        proxyRules: proxyUrl
       })
     }
 
@@ -450,12 +603,44 @@ function runApp() {
         requestHeaders['Sec-Fetch-Site'] = 'same-origin'
         requestHeaders['Sec-Fetch-Mode'] = 'same-origin'
         requestHeaders['X-Youtube-Bootstrap-Logged-In'] = 'false'
+      } else if (
+        url.startsWith('https://www.youtube.com/watch') ||
+        (urlObj.origin === 'www.youtube.com' && urlObj.pathname === '/')
+      ) {
+        delete requestHeaders.Referer
+        delete requestHeaders.Origin
+        requestHeaders['Sec-Fetch-Dest'] = 'document'
+        requestHeaders['Sec-Fetch-Mode'] = 'navigate'
+        requestHeaders['Sec-Fetch-Site'] = 'none'
+        requestHeaders['Sec-Fetch-User'] = '?1'
+
+        if (requestHeaders['X-Cookie']) {
+          requestHeaders.Cookie = requestHeaders.Cookie
+            ? requestHeaders.Cookie + ';' + requestHeaders['X-Cookie']
+            : requestHeaders['X-Cookie']
+
+          delete requestHeaders['X-Cookie']
+        }
+      } else if (url === 'https://www.youtube.com/sw.js_data' || url.startsWith('https://www.youtube.com/api/timedtext')) {
+        requestHeaders.Referer = 'https://www.youtube.com/sw.js'
+        requestHeaders['Sec-Fetch-Site'] = 'same-origin'
+        requestHeaders['Sec-Fetch-Mode'] = 'same-origin'
+      } else if (
+        urlObj.origin.endsWith('.googleusercontent.com') ||
+        urlObj.origin.endsWith('.ggpht.com') ||
+        urlObj.origin.endsWith('.ytimg.com')
+      ) {
+        requestHeaders.Referer = 'https://www.youtube.com/'
+        requestHeaders.Origin = 'https://www.youtube.com'
       } else if (urlObj.origin.endsWith('.googlevideo.com') && urlObj.pathname === '/videoplayback') {
         requestHeaders.Referer = 'https://www.youtube.com/'
         requestHeaders.Origin = 'https://www.youtube.com'
 
         // YouTube doesn't send the Content-Type header for the media requests, so we shouldn't either
         delete requestHeaders['Content-Type']
+      } else if (urlObj.origin === 'https://ipwho.is') {
+        // Fix the CORS error with the proxy test button
+        requestHeaders = {}
       } else if (webContents) {
         const invidiousAuthorization = invidiousAuthorizations.get(webContents.id)
 
@@ -464,17 +649,30 @@ function runApp() {
         }
       }
 
+      // eslint-disable-next-line n/no-callback-literal
       callback({ requestHeaders })
     })
 
     // when we create a real session on the watch page, youtube returns tracking cookies, which we definitely don't want
-    const trackingCookieRequestFilter = { urls: ['https://www.youtube.com/sw.js_data', 'https://www.youtube.com/iframe_api'] }
+    const trackingCookieRequestFilter = {
+      urls: [
+        'https://www.youtube.com/sw.js_data',
+        'https://www.youtube.com/iframe_api',
+        'https://www.youtube.com/watch?*',
+        'https://www.youtube.com/',
+      ]
+    }
 
     session.defaultSession.webRequest.onHeadersReceived(trackingCookieRequestFilter, ({ responseHeaders }, callback) => {
       if (responseHeaders) {
         delete responseHeaders['set-cookie']
+        delete responseHeaders['content-security-policy']
+        delete responseHeaders['cross-origin-opener-policy']
+        delete responseHeaders['report-to']
+        delete responseHeaders['reporting-endpoints']
       }
 
+      // eslint-disable-next-line n/no-callback-literal
       callback({ responseHeaders })
     })
 
@@ -517,11 +715,11 @@ function runApp() {
 
           // Electron doesn't allow certain headers to be set:
           // https://www.electronjs.org/docs/latest/api/client-request#requestsetheadername-value
-          // also blacklist Origin and Referrer as we don't want to let YouTube know about them
-          const blacklistedHeaders = ['content-length', 'host', 'trailer', 'te', 'upgrade', 'cookie2', 'keep-alive', 'transfer-encoding', 'origin', 'referrer']
+          // also denylist Origin and Referrer as we don't want to let YouTube know about them
+          const denylistedHeaders = ['content-length', 'host', 'trailer', 'te', 'upgrade', 'cookie2', 'keep-alive', 'transfer-encoding', 'origin', 'referrer']
 
           for (const header of Object.keys(request.headers)) {
-            if (!blacklistedHeaders.includes(header.toLowerCase())) {
+            if (!denylistedHeaders.includes(header.toLowerCase())) {
               newRequest.setHeader(header, request.headers[header])
             }
           }
@@ -570,6 +768,7 @@ function runApp() {
           redirectURL += `#${details.webContents.id}`
         }
 
+        // eslint-disable-next-line n/no-callback-literal
         callback({
           redirectURL
         })
@@ -578,20 +777,133 @@ function runApp() {
       // --- end of `if experimentsDisableDiskCache` ---
     }
 
-    await createWindow()
+    try {
+      const baseTheme = await baseHandlers.settings._findOne('baseTheme')
 
-    if (process.env.NODE_ENV === 'development') {
-      try {
-        require('vue-devtools').install()
-      } catch (err) {
-        console.error(err)
+      if (baseTheme?.value) {
+        updateThemeSource(baseTheme.value)
       }
-    }
+    } catch {}
+
+    await createWindow()
 
     if (isDebug) {
       mainWindow.webContents.openDevTools()
     }
   })
+
+  app.on('login', async (event, webContents, request, authInfo, callback) => {
+    if (authInfo.isProxy) {
+      event.preventDefault()
+      const proxyUsername = (await baseHandlers.settings._findOne('proxyUsername'))?.value
+      const proxyPassword = (await baseHandlers.settings._findOne('proxyPassword'))?.value
+      callback(proxyUsername, proxyPassword)
+    }
+  })
+
+  function trayClick(window, close = false) {
+    if (!close) {
+      if (window.id in trayMaximizedWindows) {
+        window.maximize()
+      } else {
+        window.show()
+
+        // Calling hide() inside minimize is broken for some Linux distros (window minimizes again when trying to drag,
+        // resize or maximize it, among other shenanigans). It seems to work as intended with this workaround.
+        if (process.platform === 'linux') {
+          window.hide()
+          window.show()
+        }
+      }
+
+      if (trayWindows.length === BrowserWindow.getAllWindows().length) { mainWindow = window }
+    } else if (trayWindows.length > 0) {
+      window.close()
+    }
+
+    trayWindows.splice(trayWindows.findIndex(item => item.id === window.id), 1)
+
+    if (trayWindows.length > 0) {
+      createTrayContextMenu()
+    } else {
+      destroyTray()
+    }
+  }
+
+  function createTrayContextMenu() {
+    const menuItems = []
+    trayWindows.forEach(window => {
+      menuItems.push({
+        label: window.title,
+        submenu: [
+          {
+            label: 'Show',
+            click: () => trayClick(window)
+          },
+          {
+            label: 'Close',
+            click: () => trayClick(window, true)
+          }
+        ]
+      })
+    })
+
+    menuItems.push(
+      {
+        type: 'separator'
+      },
+      ...defaultTrayMenu()
+    )
+
+    const menu = Menu.buildFromTemplate(menuItems)
+    tray.setContextMenu(menu)
+  }
+
+  function defaultTrayMenu() {
+    return [
+      {
+        label: 'New Window',
+        click: () => createWindow({
+          showWindowNow: true,
+          replaceMainWindow: trayWindows.some(item => item.id === mainWindow.id)
+        })
+      },
+      {
+        label: 'Show All Windows',
+        click: () => {
+          // Use while loop instead of for loop as trayClick modifies the trayWindows array
+          while (trayWindows.length > 0) {
+            trayClick(trayWindows[0])
+          }
+        }
+      },
+      {
+        label: 'Quit',
+        click: handleQuit
+      }
+    ]
+  }
+
+  function destroyTray() {
+    if (!tray) return
+
+    if (process.platform !== 'linux') {
+      tray.destroy()
+      tray = null
+    } else {
+      const menu = Menu.buildFromTemplate(defaultTrayMenu())
+      tray.setContextMenu(menu)
+    }
+  }
+
+  function showHiddenWindows() {
+    trayWindows.forEach(window => {
+      window.minimize()
+    })
+
+    destroyTray()
+    trayWindows = []
+  }
 
   /**
    * @param {string} extension
@@ -621,20 +933,7 @@ function runApp() {
     }
   }
 
-  /**
-   * @param {string} urlString
-   */
-  function isFreeTubeUrl(urlString) {
-    const { protocol, host, pathname } = new URL(urlString)
-
-    if (process.env.NODE_ENV === 'development') {
-      return protocol === 'http:' && host === 'localhost:9080' && (pathname === '/' || pathname === '/index.html')
-    } else {
-      return protocol === 'app:' && host === 'bundle' && pathname === '/index.html'
-    }
-  }
-
-  const ROOT_APP_URL = process.env.NODE_ENV === 'development' ? 'http://localhost:9080' : 'app://bundle/index.html'
+  const htmlFullscreenWindowIds = new Set()
 
   async function createWindow(
     {
@@ -690,6 +989,8 @@ function runApp() {
           return '#fdf6e3'
         case 'everforest-light-low':
           return '#f3ead3'
+        case 'catppuccin-latte':
+          return '#eff1f5'
         case 'system':
         default:
           return nativeTheme.shouldUseDarkColors ? '#212121' : '#f1f1f1'
@@ -700,63 +1001,7 @@ function runApp() {
       return nativeTheme.shouldUseDarkColors ? '#212121' : '#f1f1f1'
     })
 
-    /**
-     * Initial window options
-     */
-    const commonBrowserWindowOptions = {
-      backgroundColor: windowBackground,
-      darkTheme: nativeTheme.shouldUseDarkColors,
-      icon: process.env.NODE_ENV === 'development'
-        ? path.join(__dirname, '../../_icons/iconColor.png')
-        /* eslint-disable-next-line n/no-path-concat */
-        : `${__dirname}/_icons/iconColor.png`,
-      autoHideMenuBar: true,
-      // useContentSize: true,
-      webPreferences: {
-        nodeIntegration: true,
-        nodeIntegrationInWorker: false,
-        webSecurity: false,
-        backgroundThrottling: false,
-        contextIsolation: false
-      },
-      minWidth: 340,
-      minHeight: 380
-    }
-
-    const newWindow = new BrowserWindow(
-      Object.assign(
-        {
-          // It will be shown later when ready via `ready-to-show` event
-          show: showWindowNow
-        },
-        commonBrowserWindowOptions
-      )
-    )
-
-    // region Ensure child windows use same options since electron 14
-
-    // https://github.com/electron/electron/blob/14-x-y/docs/api/window-open.md#native-window-example
-    newWindow.webContents.setWindowOpenHandler((details) => {
-      createWindow({
-        replaceMainWindow: false,
-        showWindowNow: true,
-        windowStartupUrl: details.url
-      })
-      return {
-        action: 'deny'
-      }
-    })
-
-    // endregion Ensure child windows use same options since electron 14
-
-    if (replaceMainWindow) {
-      mainWindow = newWindow
-    }
-
-    newWindow.setBounds({
-      width: 1200,
-      height: 800
-    })
+    let savedBounds, savedMaximized, savedFullScreen
 
     const boundsDoc = await baseHandlers.settings._findOne('bounds')
     if (typeof boundsDoc?.value === 'object') {
@@ -767,21 +1012,143 @@ function runApp() {
       })
 
       if (windowVisible) {
-        newWindow.setBounds({
-          x: bounds.x,
-          y: bounds.y,
-          width: bounds.width,
-          height: bounds.height
-        })
+        savedBounds = bounds
       }
 
-      if (maximized) {
-        newWindow.maximize()
+      savedMaximized = maximized
+      savedFullScreen = fullScreen
+    }
+
+    const newWindow = new BrowserWindow({
+      // It will be shown later when ready via `ready-to-show` event
+      show: showWindowNow,
+      backgroundColor: windowBackground,
+      icon: process.env.NODE_ENV === 'development'
+        ? path.join(__dirname, '../../_icons/iconColor.png')
+        : path.join(__dirname, '../_icons/iconColor.png'),
+      autoHideMenuBar: true,
+      // useContentSize: true,
+      webPreferences: {
+        webSecurity: false,
+        backgroundThrottling: false,
+        preload: process.env.NODE_ENV === 'development'
+          ? path.resolve(__dirname, '../../dist/preload.js')
+          : path.resolve(__dirname, 'preload.js')
+      },
+      minWidth: 340,
+      minHeight: 380,
+      ...savedBounds
+        ? {
+            x: savedBounds.x,
+            y: savedBounds.y,
+            width: savedBounds.width,
+            height: savedBounds.height
+          }
+        : {
+            width: 1200,
+            height: 800
+          }
+    })
+
+    // region Ensure child windows use same options since electron 14
+
+    // https://github.com/electron/electron/blob/14-x-y/docs/api/window-open.md#native-window-example
+    newWindow.webContents.setWindowOpenHandler((details) => {
+      const url = URL.parse(details.url)
+
+      // Only handle valid URLs that came from a FreeTube page
+      if (url !== null && isFreeTubeUrl(newWindow.webContents.getURL())) {
+        if (isFreeTubeUrl(url)) {
+          createWindow({
+            replaceMainWindow: false,
+            showWindowNow: true,
+            windowStartupUrl: details.url
+          })
+        } else if (
+          url.protocol === 'http:' || url.protocol === 'https:' ||
+
+          // Email address on the about page and Autolinker detects and links email addresses
+          url.protocol === 'mailto:' ||
+
+          // Autolinker detects and links phone numbers
+          url.protocol === 'tel:' ||
+
+          // Donation links on the about page
+          (url.protocol === 'bitcoin:' && url.pathname === ABOUT_BITCOIN_ADDRESS)
+        ) {
+          shell.openExternal(details.url)
+        }
       }
 
-      if (fullScreen) {
-        newWindow.setFullScreen(true)
+      return { action: 'deny' }
+    })
+
+    // endregion Ensure child windows use same options since electron 14
+
+    if (isTrayOnMinimizeSupported) {
+      function manageTray(window, removeWindow = false) {
+        if (tray) {
+          if (!removeWindow) {
+            trayWindows.push(window)
+            createTrayContextMenu()
+          } else if (trayWindows.some(item => item.id === window.id)) {
+            trayClick(window)
+          }
+        } else {
+          const icon = process.env.NODE_ENV === 'development'
+            ? path.join(__dirname, '..', '..', '_icons', 'iconColor.png')
+            : path.join(__dirname, '..', '_icons', 'iconColor.png')
+
+          tray = new Tray(icon)
+
+          tray.setIgnoreDoubleClickEvents(true)
+          tray.setToolTip('FreeTube')
+
+          trayWindows = [window]
+          createTrayContextMenu()
+
+          if (process.platform !== 'linux') {
+            tray.on('click', (event) => {
+              if (trayWindows.length === 1) { trayClick(trayWindows[0]) }
+            })
+          }
+        }
       }
+
+      newWindow.on('minimize', () => {
+        if (trayOnMinimize) {
+          newWindow.hide()
+          manageTray(newWindow)
+
+          if (newWindow === mainWindow) {
+            // A timer is needed because getFocusedWindow doesn't update until the minimize event ends
+            setTimeout(() => {
+              const newMainWindow = BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows().find(window => window.isVisible())
+              if (newMainWindow) { mainWindow = newMainWindow }
+            }, 100)
+          }
+        }
+      })
+
+      newWindow.on('maximize', () => {
+        if (trayOnMinimize) { trayMaximizedWindows[newWindow.id] = true }
+      })
+
+      newWindow.on('unmaximize', () => {
+        if (trayOnMinimize) { delete trayMaximizedWindows[newWindow.id] }
+      })
+    }
+
+    if (replaceMainWindow) {
+      mainWindow = newWindow
+    }
+
+    if (savedMaximized) {
+      newWindow.maximize()
+    }
+
+    if (savedFullScreen) {
+      newWindow.setFullScreen(true)
     }
 
     // If called multiple times
@@ -798,13 +1165,21 @@ function runApp() {
     }
 
     if (typeof searchQueryText === 'string' && searchQueryText.length > 0) {
-      ipcMain.once(IpcChannels.SEARCH_INPUT_HANDLING_READY, () => {
-        newWindow.webContents.send(IpcChannels.UPDATE_SEARCH_INPUT_TEXT, searchQueryText)
-      })
+      /**
+       * @param {import('electron').IpcMainEvent} event
+       */
+      const searchInputReadyHandler = (event) => {
+        if (isFreeTubeUrl(event.senderFrame.url)) {
+          newWindow.webContents.ipc.off(IpcChannels.SEARCH_INPUT_HANDLING_READY, searchInputReadyHandler)
+
+          event.reply(IpcChannels.UPDATE_SEARCH_INPUT_TEXT, searchQueryText)
+        }
+      }
+
+      newWindow.webContents.ipc.on(IpcChannels.SEARCH_INPUT_HANDLING_READY, searchInputReadyHandler)
     }
 
-    // Show when loaded
-    newWindow.once('ready-to-show', () => {
+    const showWindow = () => {
       if (newWindow.isVisible()) {
         // only open the dev tools if they aren't already open
         if (process.env.NODE_ENV === 'development' && !newWindow.webContents.isDevToolsOpened()) {
@@ -813,15 +1188,41 @@ function runApp() {
         return
       }
 
-      newWindow.show()
-      newWindow.focus()
+      if (isTrayOnMinimizeSupported && trayOnMinimize && trayWindows.length > 0) {
+        trayClick(newWindow)
+      } else {
+        newWindow.show()
+        newWindow.focus()
+      }
 
       if (process.env.NODE_ENV === 'development') {
         newWindow.webContents.openDevTools({ activate: false })
       }
+    }
+
+    // The `ready-to-show` event doesn't always fire on wayland.
+    // Use the `did-finish-load` event on the web contents instead as that is similar enough
+    // https://github.com/electron/electron/issues/48859
+
+    if (process.platform === 'linux' && app.commandLine.getSwitchValue('ozone-platform') === 'wayland') {
+      newWindow.webContents.once('did-finish-load', showWindow)
+    } else {
+      // Show when loaded
+      newWindow.once('ready-to-show', showWindow)
+    }
+
+    newWindow.on('enter-html-full-screen', () => {
+      htmlFullscreenWindowIds.add(newWindow.id)
+    })
+
+    newWindow.on('leave-html-full-screen', () => {
+      htmlFullscreenWindowIds.delete(newWindow.id)
     })
 
     newWindow.once('close', async () => {
+      // returns true if the element existed in the set
+      const htmlFullscreen = htmlFullscreenWindowIds.delete(newWindow.id)
+
       if (BrowserWindow.getAllWindows().length !== 1) {
         return
       }
@@ -829,7 +1230,9 @@ function runApp() {
       const value = {
         ...newWindow.getNormalBounds(),
         maximized: newWindow.isMaximized(),
-        fullScreen: newWindow.isFullScreen()
+
+        // Don't save the full screen state if it was triggered by an HTML API e.g. the video player
+        fullScreen: newWindow.isFullScreen() && !htmlFullscreen
       }
 
       await baseHandlers.settings._updateBounds(value)
@@ -842,14 +1245,26 @@ function runApp() {
         // Which raises "Object has been destroyed" error
         mainWindow = allWindows[0]
       }
+
+      stopPowerSaveBlockerForWindow(newWindow)
     })
+
+    return newWindow
   }
 
-  ipcMain.on(IpcChannels.APP_READY, () => {
-    if (startupUrl) {
-      mainWindow.webContents.send(IpcChannels.OPEN_URL, startupUrl, { isLaunchLink: true })
+  ipcMain.on(IpcChannels.APP_READY, (event) => {
+    if (isFreeTubeUrl(event.senderFrame.url)) {
+      if (startupUrl) {
+        mainWindow.webContents.send(IpcChannels.OPEN_URL, startupUrl)
+      }
+      startupUrl = null
     }
-    startupUrl = null
+  })
+
+  ipcMain.on(IpcChannels.SET_WINDOW_TITLE, (event, title) => {
+    if (isFreeTubeUrl(event.senderFrame.url) && typeof title === 'string') {
+      BrowserWindow.fromWebContents(event.sender)?.setTitle(title)
+    }
   })
 
   function relaunch() {
@@ -893,23 +1308,37 @@ function runApp() {
     const allWindows = BrowserWindow.getAllWindows()
 
     allWindows.forEach((window) => {
-      window.webContents.send(IpcChannels.NATIVE_THEME_UPDATE, nativeTheme.shouldUseDarkColors)
+      if (isFreeTubeUrl(window.webContents.getURL())) {
+        window.webContents.send(IpcChannels.NATIVE_THEME_UPDATE, nativeTheme.shouldUseDarkColors)
+      }
     })
   })
 
-  ipcMain.handle(IpcChannels.GENERATE_PO_TOKEN, (_, visitorData) => {
-    return generatePoToken(visitorData)
+  ipcMain.handle(IpcChannels.GENERATE_PO_TOKEN, (event, videoId, context, initialAttestationData, ytConfig) => {
+    if (isFreeTubeUrl(event.senderFrame.url)) {
+      return generatePoToken(videoId, context, initialAttestationData, ytConfig, proxyUrl)
+    }
   })
 
-  ipcMain.on(IpcChannels.ENABLE_PROXY, (_, url) => {
+  ipcMain.on(IpcChannels.ENABLE_PROXY, (event, url) => {
+    if (!isFreeTubeUrl(event.senderFrame.url)) {
+      return
+    }
+
     session.defaultSession.setProxy({
       proxyRules: url
     })
+    proxyUrl = url
     session.defaultSession.closeAllConnections()
   })
 
-  ipcMain.on(IpcChannels.DISABLE_PROXY, () => {
+  ipcMain.on(IpcChannels.DISABLE_PROXY, (event) => {
+    if (!isFreeTubeUrl(event.senderFrame.url)) {
+      return
+    }
+
     session.defaultSession.setProxy({})
+    proxyUrl = undefined
     session.defaultSession.closeAllConnections()
   })
 
@@ -919,7 +1348,11 @@ function runApp() {
   // Math.trunc but with a bitwise OR so that it can be calcuated at build time and the number inlined
   const HALF_OF_NAV_HISTORY_DISPLAY_LIMIT = (NAV_HISTORY_DISPLAY_LIMIT / 2) | 0
 
-  ipcMain.handle(IpcChannels.GET_NAVIGATION_HISTORY, ({ sender }) => {
+  ipcMain.handle(IpcChannels.GET_NAVIGATION_HISTORY, ({ senderFrame, sender }) => {
+    if (!isFreeTubeUrl(senderFrame.url)) {
+      return
+    }
+
     const activeIndex = sender.navigationHistory.getActiveIndex()
     const length = sender.navigationHistory.length()
 
@@ -950,83 +1383,26 @@ function runApp() {
 
   // #endregion navigation history
 
-  ipcMain.handle(IpcChannels.OPEN_EXTERNAL_LINK, (_, url) => {
-    if (typeof url === 'string') {
-      let parsedURL
-
-      try {
-        parsedURL = new URL(url)
-      } catch {
-        // If it's not a valid URL don't open it
-        return false
-      }
-
-      if (
-        parsedURL.protocol === 'http:' || parsedURL.protocol === 'https:' ||
-
-        // Email address on the about page and Autolinker detects and links email addresses
-        parsedURL.protocol === 'mailto:' ||
-
-        // Autolinker detects and links phone numbers
-        parsedURL.protocol === 'tel:' ||
-
-        // Donation links on the about page
-        (parsedURL.protocol === 'bitcoin:' && parsedURL.pathname === ABOUT_BITCOIN_ADDRESS)
-      ) {
-        shell.openExternal(url)
-        return true
-      }
+  ipcMain.handle(IpcChannels.GET_SYSTEM_LOCALE, (event) => {
+    if (isFreeTubeUrl(event.senderFrame.url)) {
+      // we should switch to getPreferredSystemLanguages at some point and iterate through until we find a supported locale
+      return app.getSystemLocale()
     }
-
-    return false
   })
 
-  ipcMain.handle(IpcChannels.GET_SYSTEM_LOCALE, () => {
-    // we should switch to getPreferredSystemLanguages at some point and iterate through until we find a supported locale
-    return app.getSystemLocale()
-  })
-
-  ipcMain.handle(IpcChannels.GET_PICTURES_PATH, () => {
-    return app.getPath('pictures')
-  })
-
-  // Allows programmatic toggling of fullscreen without accompanying user interaction.
-  // See: https://developer.mozilla.org/en-US/docs/Web/Security/User_activation#transient_activation
-  ipcMain.on(IpcChannels.REQUEST_FULLSCREEN, ({ sender }) => {
-    sender.executeJavaScript('document.querySelector("video.player").ui.getControls().toggleFullScreen()', true)
-  })
-
-  // Allows programmatic toggling of picture-in-picture mode without accompanying user interaction.
-  // See: https://developer.mozilla.org/en-US/docs/Web/Security/User_activation#transient_activation
-  ipcMain.on(IpcChannels.REQUEST_PIP, ({ sender }) => {
-    sender.executeJavaScript('document.querySelector("video.player").ui.getControls().togglePiP()', true)
-  })
-
-  ipcMain.handle(IpcChannels.SHOW_SAVE_DIALOG, async ({ sender }, options) => {
-    const senderWindow = findSenderWindow(sender)
-    if (senderWindow) {
-      return await dialog.showSaveDialog(senderWindow, options)
+  ipcMain.handle(IpcChannels.IS_WAYLAND_PLATFORM, (event) => {
+    if (isFreeTubeUrl(event.senderFrame.url)) {
+      return app.commandLine.getSwitchValue('ozone-platform') === 'wayland'
     }
-    return await dialog.showSaveDialog(options)
   })
 
-  function findSenderWindow(sender) {
-    return BrowserWindow.getAllWindows().find((window) => {
-      return window.webContents.id === sender.id
-    })
-  }
-
-  ipcMain.on(IpcChannels.CHOOSE_DEFAULT_FOLDER, async (event, kind) => {
-    if (!isFreeTubeUrl(event.senderFrame.url) || (kind !== DefaultFolderKind.DOWNLOADS && kind !== DefaultFolderKind.SCREENSHOTS)) {
-      return
-    }
-
-    const settingId = kind === DefaultFolderKind.DOWNLOADS ? 'downloadFolderPath' : 'screenshotFolderPath'
-
-    let currentPath = (await baseHandlers.settings._findOne(settingId))?.value
-
+  /**
+   * @param {import('electron').WebContents} webContents
+   * @param {string | undefined} [currentPath]
+   */
+  async function chooseDefaultFolder(webContents, currentPath) {
     if (typeof currentPath !== 'string' || currentPath.length === 0) {
-      currentPath = app.getPath(kind === DefaultFolderKind.DOWNLOADS ? 'downloads' : 'pictures')
+      currentPath = app.getPath('pictures')
     }
 
     const dialogOptions = {
@@ -1036,7 +1412,7 @@ function runApp() {
 
     let result
 
-    const window = BrowserWindow.fromWebContents(event.sender)
+    const window = BrowserWindow.fromWebContents(webContents)
     if (window) {
       result = await dialog.showOpenDialog(window, dialogOptions)
     } else {
@@ -1046,6 +1422,8 @@ function runApp() {
     if (result.canceled) {
       return
     }
+
+    const settingId = 'screenshotFolderPath'
 
     await baseHandlers.settings.upsert(settingId, result.filePaths[0])
 
@@ -1058,22 +1436,52 @@ function runApp() {
     }
 
     BrowserWindow.getAllWindows().forEach((window) => {
-      window.webContents.send(IpcChannels.SYNC_SETTINGS, syncPayload)
+      if (isFreeTubeUrl(window.webContents.getURL())) {
+        window.webContents.send(IpcChannels.SYNC_SETTINGS, syncPayload)
+      }
     })
-  })
 
-  ipcMain.handle(IpcChannels.WRITE_SCREENSHOT, async (event, filename, arrayBuffer) => {
-    if (!isFreeTubeUrl(event.senderFrame.url) || typeof filename !== 'string' || !(arrayBuffer instanceof ArrayBuffer)) {
+    return result.filePaths[0]
+  }
+
+  ipcMain.on(IpcChannels.CHOOSE_DEFAULT_FOLDER, async (event) => {
+    if (!isFreeTubeUrl(event.senderFrame.url)) {
       return
     }
 
-    const screenshotFolderPath = await baseHandlers.settings._findOne('screenshotFolderPath')
+    const currentPath = (await baseHandlers.settings._findOne('screenshotFolderPath'))?.value
+
+    await chooseDefaultFolder(event.sender, currentPath)
+  })
+
+  ipcMain.handle(IpcChannels.WRITE_TO_DEFAULT_FOLDER, async (event, filename, arrayBuffer) => {
+    if (
+      !isFreeTubeUrl(event.senderFrame.url) ||
+      typeof filename !== 'string' ||
+      !(arrayBuffer instanceof ArrayBuffer)) {
+      return
+    }
+
+    const folderPath = (await baseHandlers.settings._findOne('screenshotFolderPath'))?.value
 
     let directory
-    if (screenshotFolderPath && screenshotFolderPath.value.length > 0) {
-      directory = screenshotFolderPath.value
-    } else {
-      directory = path.join(app.getPath('pictures'), 'FreeTube')
+    if (typeof folderPath === 'string' && folderPath.length > 0) {
+      try {
+        await asyncFs.access(path.normalize(folderPath), fsConstants.W_OK)
+        directory = folderPath
+      } catch {}
+    }
+
+    // if setting is not set or we do not have write access to the folder
+    // prompt the user for a folder
+    // not having write access can happen if the user copies their settings to different machines
+    // or if they revoke a previously permitted folder in flatseal
+    if (directory === undefined) {
+      directory = await chooseDefaultFolder(event.sender)
+
+      if (typeof directory !== 'string' || directory.length === 0) {
+        return false
+      }
     }
 
     directory = path.normalize(directory)
@@ -1081,7 +1489,8 @@ function runApp() {
     const filePath = path.resolve(directory, filename)
 
     // Ensure that we are only writing inside of the expected directory
-    if (path.dirname(filePath) !== directory) {
+    // 'path.dirname' does not return trailing slash, remove it from 'directory' path to ensure consistent comparison
+    if (path.dirname(filePath) !== directory.replace(/\/$/, '')) {
       throw new Error('Invalid save location')
     }
 
@@ -1090,27 +1499,59 @@ function runApp() {
 
       await asyncFs.writeFile(filePath, new DataView(arrayBuffer))
     } catch (error) {
-      console.error('WRITE_SCREENSHOT failed', error)
+      console.error('WRITE_TO_DEFAULT_FOLDER failed', error)
       // throw a new error so that we don't expose the real error to the renderer
+      // eslint-disable-next-line preserve-caught-error
       throw new Error('Failed to save')
     }
+
+    return true
   })
 
-  ipcMain.on(IpcChannels.STOP_POWER_SAVE_BLOCKER, (_, id) => {
-    powerSaveBlocker.stop(id)
-  })
+  /** @type {Map<number, number>} */
+  const activePowerSaveBlockers = new Map()
 
-  ipcMain.handle(IpcChannels.START_POWER_SAVE_BLOCKER, (_) => {
-    return powerSaveBlocker.start('prevent-display-sleep')
-  })
+  /**
+   * @param {BrowserWindow} window
+   */
+  function stopPowerSaveBlockerForWindow(window) {
+    const powerSaveBlockerId = activePowerSaveBlockers.get(window.id)
 
-  ipcMain.on(IpcChannels.CREATE_NEW_WINDOW, (event, path, query, searchQueryText) => {
+    if (typeof powerSaveBlockerId === 'number') {
+      powerSaveBlocker.stop(powerSaveBlockerId)
+
+      activePowerSaveBlockers.delete(window.id)
+    }
+  }
+
+  ipcMain.on(IpcChannels.STOP_POWER_SAVE_BLOCKER, (event) => {
     if (!isFreeTubeUrl(event.senderFrame.url)) {
       return
     }
 
-    if (path == null && query == null && searchQueryText == null) {
-      createWindow({ replaceMainWindow: false, showWindowNow: true })
+    const browserWindow = BrowserWindow.fromWebContents(event.sender)
+
+    if (browserWindow) {
+      stopPowerSaveBlockerForWindow(browserWindow)
+    }
+  })
+
+  ipcMain.on(IpcChannels.START_POWER_SAVE_BLOCKER, (event) => {
+    if (!isFreeTubeUrl(event.senderFrame.url)) {
+      return
+    }
+
+    const browserWindow = BrowserWindow.fromWebContents(event.sender)
+
+    if (browserWindow && !activePowerSaveBlockers.has(browserWindow.id)) {
+      const powerSaveBlockerId = powerSaveBlocker.start('prevent-display-sleep')
+
+      activePowerSaveBlockers.set(browserWindow.id, powerSaveBlockerId)
+    }
+  })
+
+  ipcMain.on(IpcChannels.CREATE_NEW_WINDOW, (event, path, query, searchQueryText) => {
+    if (!isFreeTubeUrl(event.senderFrame.url)) {
       return
     }
 
@@ -1140,21 +1581,46 @@ function runApp() {
     })
   })
 
-  ipcMain.on(IpcChannels.OPEN_IN_EXTERNAL_PLAYER, (_, payload) => {
-    const child = cp.spawn(payload.executable, payload.args, { detached: true, stdio: 'ignore' })
-    child.unref()
+  ipcMain.on(IpcChannels.OPEN_IN_EXTERNAL_PLAYER, handleOpenInExternalPlayer)
+
+  ipcMain.handle(IpcChannels.GET_REPLACE_HTTP_CACHE, (event) => {
+    if (isFreeTubeUrl(event.senderFrame.url)) {
+      return replaceHttpCache
+    }
   })
 
-  ipcMain.handle(IpcChannels.GET_REPLACE_HTTP_CACHE, () => {
-    return replaceHttpCache
-  })
+  ipcMain.once(IpcChannels.TOGGLE_REPLACE_HTTP_CACHE, async (event) => {
+    if (!isFreeTubeUrl(event.senderFrame.url)) {
+      return
+    }
 
-  ipcMain.once(IpcChannels.TOGGLE_REPLACE_HTTP_CACHE, async () => {
     if (replaceHttpCache) {
       await asyncFs.rm(REPLACE_HTTP_CACHE_PATH)
     } else {
       // create an empty file
       const handle = await asyncFs.open(REPLACE_HTTP_CACHE_PATH, 'w')
+      await handle.close()
+    }
+
+    relaunch()
+  })
+
+  ipcMain.handle(IpcChannels.GET_DISABLE_HARDWARE_ACCELERATION, (event) => {
+    if (isFreeTubeUrl(event.senderFrame.url)) {
+      return disableHardwareAcceleration
+    }
+  })
+
+  ipcMain.once(IpcChannels.TOGGLE_DISABLE_HARDWARE_ACCELERATION, async (event) => {
+    if (!isFreeTubeUrl(event.senderFrame.url)) {
+      return
+    }
+
+    if (disableHardwareAcceleration) {
+      await asyncFs.rm(DISABLE_HARDWARE_ACCELERATION_PATH)
+    } else {
+      // create an empty file
+      const handle = await asyncFs.open(DISABLE_HARDWARE_ACCELERATION_PATH, 'w')
       await handle.close()
     }
 
@@ -1170,7 +1636,11 @@ function runApp() {
     return path.join(PLAYER_CACHE_PATH, sanitizedKey)
   }
 
-  ipcMain.handle(IpcChannels.PLAYER_CACHE_GET, async (_, key) => {
+  ipcMain.handle(IpcChannels.PLAYER_CACHE_GET, async (event, key) => {
+    if (!isFreeTubeUrl(event.senderFrame.url)) {
+      return
+    }
+
     const filePath = playerCachePathForKey(key)
 
     try {
@@ -1188,7 +1658,11 @@ function runApp() {
     }
   })
 
-  ipcMain.handle(IpcChannels.PLAYER_CACHE_SET, async (_, key, value) => {
+  ipcMain.handle(IpcChannels.PLAYER_CACHE_SET, async (event, key, value) => {
+    if (!isFreeTubeUrl(event.senderFrame.url)) {
+      return
+    }
+
     const filePath = playerCachePathForKey(key)
 
     await asyncFs.mkdir(PLAYER_CACHE_PATH, { recursive: true })
@@ -1211,21 +1685,33 @@ function runApp() {
     }
   })
 
+  function updateThemeSource(baseTheme) {
+    nativeTheme.themeSource = LIGHT_BASE_THEMES.includes(baseTheme)
+      ? 'light'
+      : (DARK_BASE_THEMES.includes(baseTheme)
+          ? 'dark'
+          : 'system')
+  }
+
   // ************************************************* //
   // DB related IPC calls
   // *********** //
 
   // Settings
   ipcMain.handle(IpcChannels.DB_SETTINGS, async (event, { action, data }) => {
+    if (!isFreeTubeUrl(event.senderFrame.url)) {
+      return
+    }
+
     try {
       switch (action) {
         case DBActions.GENERAL.FIND:
           return await baseHandlers.settings.find()
 
         case DBActions.GENERAL.UPSERT:
-          // These two are only allowed to be changed by the CHOOSE_DEFAULT_FOLDER IPC action
+          // This one is only allowed to be changed by the CHOOSE_DEFAULT_FOLDER IPC action
           // to avoid the "write to default folder" IPC calls being abused to write to arbitrary locations
-          if (data._id === 'downloadFolderPath' || data._id === 'screenshotFolderPath') {
+          if (data._id === 'screenshotFolderPath') {
             return null
           }
 
@@ -1237,12 +1723,27 @@ function runApp() {
           )
           switch (data._id) {
             // Update app menu on related setting update
+            case 'backendFallback':
+              backendFallback = data.value
+              await setMenu()
+              break
+            case 'backendPreference':
+              backendPreference = data.value
+              await setMenu()
+              break
             case 'hideTrendingVideos':
             case 'hidePopularVideos':
-            case 'backendFallback':
-            case 'backendPreference':
             case 'hidePlaylists':
               await setMenu()
+              break
+            case 'hideToTrayOnMinimize':
+              if (isTrayOnMinimizeSupported) {
+                trayOnMinimize = data.value
+                if (!trayOnMinimize) { showHiddenWindows() }
+              }
+              break
+            case 'baseTheme':
+              updateThemeSource(data.value)
               break
 
             default:
@@ -1263,6 +1764,10 @@ function runApp() {
   // *********** //
   // History
   ipcMain.handle(IpcChannels.DB_HISTORY, async (event, { action, data }) => {
+    if (!isFreeTubeUrl(event.senderFrame.url)) {
+      return
+    }
+
     try {
       switch (action) {
         case DBActions.GENERAL.FIND:
@@ -1277,12 +1782,12 @@ function runApp() {
           )
           return null
 
-        case DBActions.HISTORY.OVERWRITE:
+        case DBActions.GENERAL.OVERWRITE:
           await baseHandlers.history.overwrite(data)
           syncOtherWindows(
             IpcChannels.SYNC_HISTORY,
             event,
-            { event: SyncEvents.HISTORY.OVERWRITE, data }
+            { event: SyncEvents.GENERAL.OVERWRITE, data }
           )
           return null
 
@@ -1301,6 +1806,24 @@ function runApp() {
             IpcChannels.SYNC_HISTORY,
             event,
             { event: SyncEvents.HISTORY.UPDATE_PLAYLIST, data }
+          )
+          return null
+
+        case DBActions.HISTORY.UNSET_PLAYLIST_FOR_VIDEOS:
+          await baseHandlers.history.unsetLastViewedPlaylistForVideos(data.videoIds, data.lastViewedPlaylistId)
+          syncOtherWindows(
+            IpcChannels.SYNC_HISTORY,
+            event,
+            { event: SyncEvents.HISTORY.UNSET_PLAYLIST_FOR_VIDEOS, data }
+          )
+          return null
+
+        case DBActions.HISTORY.UNSET_PLAYLISTS:
+          await baseHandlers.history.unsetLastViewedPlaylists(data)
+          syncOtherWindows(
+            IpcChannels.SYNC_HISTORY,
+            event,
+            { event: SyncEvents.HISTORY.UNSET_PLAYLISTS, data }
           )
           return null
 
@@ -1335,6 +1858,10 @@ function runApp() {
   // *********** //
   // Profiles
   ipcMain.handle(IpcChannels.DB_PROFILES, async (event, { action, data }) => {
+    if (!isFreeTubeUrl(event.senderFrame.url)) {
+      return
+    }
+
     try {
       switch (action) {
         case DBActions.GENERAL.CREATE: {
@@ -1403,6 +1930,10 @@ function runApp() {
   // The remaining should have it implemented only when playlists
   // get fully implemented into the app
   ipcMain.handle(IpcChannels.DB_PLAYLISTS, async (event, { action, data }) => {
+    if (!isFreeTubeUrl(event.senderFrame.url)) {
+      return
+    }
+
     try {
       switch (action) {
         case DBActions.GENERAL.CREATE:
@@ -1427,7 +1958,7 @@ function runApp() {
           return null
 
         case DBActions.PLAYLISTS.UPSERT_VIDEO:
-          await baseHandlers.playlists.upsertVideoByPlaylistId(data._id, data.videoData)
+          await baseHandlers.playlists.upsertVideoByPlaylistId(data._id, data.lastUpdatedAt, data.videoData)
           syncOtherWindows(
             IpcChannels.SYNC_PLAYLISTS,
             event,
@@ -1436,7 +1967,7 @@ function runApp() {
           return null
 
         case DBActions.PLAYLISTS.UPSERT_VIDEOS:
-          await baseHandlers.playlists.upsertVideosByPlaylistId(data._id, data.videos)
+          await baseHandlers.playlists.upsertVideosByPlaylistId(data._id, data.lastUpdatedAt, data.videos)
           syncOtherWindows(
             IpcChannels.SYNC_PLAYLISTS,
             event,
@@ -1454,7 +1985,7 @@ function runApp() {
           return null
 
         case DBActions.PLAYLISTS.DELETE_VIDEO_ID:
-          await baseHandlers.playlists.deleteVideoIdByPlaylistId(data._id, data.videoId, data.playlistItemId)
+          await baseHandlers.playlists.deleteVideoIdByPlaylistId(data._id, data.lastUpdatedAt, data.videoId, data.playlistItemId)
           syncOtherWindows(
             IpcChannels.SYNC_PLAYLISTS,
             event,
@@ -1463,7 +1994,7 @@ function runApp() {
           return null
 
         case DBActions.PLAYLISTS.DELETE_VIDEO_IDS:
-          await baseHandlers.playlists.deleteVideoIdsByPlaylistId(data._id, data.playlistItemIds)
+          await baseHandlers.playlists.deleteVideoIdsByPlaylistId(data._id, data.lastUpdatedAt, data.playlistItemIds)
           syncOtherWindows(
             IpcChannels.SYNC_PLAYLISTS,
             event,
@@ -1504,6 +2035,10 @@ function runApp() {
   // ************** //
   // Search History
   ipcMain.handle(IpcChannels.DB_SEARCH_HISTORY, async (event, { action, data }) => {
+    if (!isFreeTubeUrl(event.senderFrame.url)) {
+      return
+    }
+
     try {
       switch (action) {
         case DBActions.GENERAL.FIND:
@@ -1515,6 +2050,15 @@ function runApp() {
             IpcChannels.SYNC_SEARCH_HISTORY,
             event,
             { event: SyncEvents.GENERAL.UPSERT, data }
+          )
+          return null
+
+        case DBActions.GENERAL.OVERWRITE:
+          await baseHandlers.searchHistory.overwrite(data)
+          syncOtherWindows(
+            IpcChannels.SYNC_SEARCH_HISTORY,
+            event,
+            { event: SyncEvents.GENERAL.OVERWRITE, data }
           )
           return null
 
@@ -1549,6 +2093,10 @@ function runApp() {
   // *********** //
   // Profiles
   ipcMain.handle(IpcChannels.DB_SUBSCRIPTION_CACHE, async (event, { action, data }) => {
+    if (!isFreeTubeUrl(event.senderFrame.url)) {
+      return
+    }
+
     try {
       switch (action) {
         case DBActions.GENERAL.FIND:
@@ -1631,7 +2179,7 @@ function runApp() {
 
   function syncOtherWindows(channel, event, payload) {
     const otherWindows = BrowserWindow.getAllWindows().filter((window) => {
-      return window.webContents.id !== event.sender.id
+      return window.webContents.id !== event.sender.id && isFreeTubeUrl(window.webContents.getURL())
     })
 
     for (const window of otherWindows) {
@@ -1645,12 +2193,7 @@ function runApp() {
 
   app.on('window-all-closed', () => {
     // Clean up resources (datastores' compaction + Electron cache and storage data clearing)
-    cleanUpResources().finally(() => {
-      mainWindow = null
-      if (process.platform !== 'darwin') {
-        app.quit()
-      }
-    })
+    handleQuit()
   })
 
   if (process.platform === 'darwin') {
@@ -1670,6 +2213,21 @@ function runApp() {
 
         app.quit()
       })
+    })
+  }
+
+  if (isTrayOnMinimizeSupported) {
+    app.on('before-quit', () => {
+      if (tray) { tray.destroy() }
+    })
+  }
+
+  function handleQuit() {
+    cleanUpResources().finally(() => {
+      mainWindow = null
+      if (process.platform !== 'darwin') {
+        app.quit()
+      }
     })
   }
 
@@ -1709,15 +2267,41 @@ function runApp() {
   /*
    * Callback when processing a freetube:// link (macOS)
    */
-  app.on('open-url', (event, url) => {
+  app.on('open-url', async (event, url) => {
     event.preventDefault()
 
-    if (mainWindow && mainWindow.webContents) {
-      mainWindow.webContents.send(IpcChannels.OPEN_URL, baseUrl(url))
-    } else {
-      startupUrl = baseUrl(url)
-      if (app.isReady()) createWindow()
+    const newStartupUrl = baseUrl(url)
+    if (!(mainWindow && mainWindow.webContents)) {
+      startupUrl = newStartupUrl
+      if (app.isReady()) await createWindow()
+      return
     }
+
+    const openDeepLinksInNewWindow = (await baseHandlers.settings._findOne('openDeepLinksInNewWindow'))?.value
+    if (!openDeepLinksInNewWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore()
+      mainWindow.focus()
+      mainWindow.webContents.send(IpcChannels.OPEN_URL, newStartupUrl)
+      return
+    }
+
+    const newWindow = await createWindow({
+      replaceMainWindow: false,
+      showWindowNow: true,
+    })
+
+    /**
+     * @param {import('electron').IpcMainEvent} event
+     */
+    const readyHandler = (event) => {
+      if (isFreeTubeUrl(event.senderFrame.url)) {
+        newWindow.webContents.ipc.off(IpcChannels.APP_READY, readyHandler)
+
+        event.reply(IpcChannels.OPEN_URL, newStartupUrl)
+      }
+    }
+
+    newWindow.webContents.ipc.on(IpcChannels.APP_READY, readyHandler)
   })
 
   app.on('web-contents-created', (_, webContents) => {
@@ -1776,22 +2360,17 @@ function runApp() {
    */
 
   function navigateTo(path, browserWindow) {
-    if (browserWindow == null) {
+    if (browserWindow == null || !isFreeTubeUrl(browserWindow.webContents.getURL())) {
       return
     }
 
-    browserWindow.webContents.send(
-      IpcChannels.CHANGE_VIEW,
-      { route: path }
-    )
+    browserWindow.webContents.send(IpcChannels.CHANGE_VIEW, path)
   }
 
   async function setMenu() {
     const sidenavSettings = baseHandlers.settings._findSidenavSettings()
     const hideTrendingVideos = (await sidenavSettings.hideTrendingVideos)?.value
     const hidePopularVideos = (await sidenavSettings.hidePopularVideos)?.value
-    const backendFallback = (await sidenavSettings.backendFallback)?.value
-    const backendPreference = (await sidenavSettings.backendPreference)?.value
     const hidePlaylists = (await sidenavSettings.hidePlaylists)?.value
 
     const template = [
@@ -1862,11 +2441,6 @@ function runApp() {
       {
         label: 'View',
         submenu: [
-          { role: 'reload' },
-          {
-            role: 'forcereload',
-            accelerator: 'CmdOrCtrl+Shift+R'
-          },
           { role: 'toggledevtools' },
           { role: 'toggledevtools', accelerator: 'f12', visible: false },
           {
@@ -1974,7 +2548,7 @@ function runApp() {
             },
             type: 'normal'
           },
-          !hideTrendingVideos && {
+          (!hideTrendingVideos && (backendFallback || backendPreference === 'local')) && {
             label: 'Trending',
             click: (_menuItem, browserWindow, _event) => {
               navigateTo('/trending', browserWindow)

@@ -6,6 +6,7 @@
     <input
       :id="id"
       v-model.number="currentValue"
+      class="input"
       :disabled="disabled"
       type="range"
       :min="minValue"
@@ -13,15 +14,14 @@
       :step="step"
       @change="change"
     >
-    <span>
+    <span class="label">
       {{ $t('Display Label', {label: label, value: displayLabel}) }}
     </span>
   </label>
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
-import { useId } from '../../composables/use-id-polyfill.js'
+import { computed, ref, useId, watch } from 'vue'
 
 const props = defineProps({
   label: {
@@ -58,6 +58,12 @@ const emit = defineEmits(['change'])
 
 const id = useId()
 const currentValue = ref(props.defaultValue)
+
+watch(() => props.defaultValue, (value) => {
+  if (currentValue.value !== value) {
+    currentValue.value = value
+  }
+})
 
 const displayLabel = computed(() => {
   if (props.valueExtension === null) {

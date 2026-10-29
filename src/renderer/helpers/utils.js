@@ -1,8 +1,7 @@
-import { IpcChannels } from '../../constants'
-import FtToastEvents from '../components/ft-toast/ft-toast-events'
+import { nextTick } from 'vue'
 import i18n from '../i18n/index'
 import router from '../router/index'
-import { nextTick } from 'vue'
+import { UnsupportedPlayerActions } from '../../constants'
 
 // allowed characters in channel handle: A-Z, a-z, 0-9, -, _, .
 // https://support.google.com/youtube/answer/11585688#change_handle
@@ -70,7 +69,6 @@ export function calculatePublishedDate(publishedText, isLive = false, isUpcoming
   }
 
   if (!publishedText) {
-    console.error("publishedText is missing but the video isn't live or upcoming")
     return undefined
   }
 
@@ -163,16 +161,56 @@ export function buildVTTFileLocally(storyboard, videoLengthSeconds) {
 }
 
 /**
- * @param {string} message
+ * @param {{ startSeconds: number, endSeconds: number, title: string }[]} chapters
+ */
+export function buildChaptersVttFile(chapters) {
+  const blocks = ['WEBVTT']
+
+  for (const chapter of chapters) {
+    blocks.push(`\
+${secondsToVttTimestamp(chapter.startSeconds)} --> ${secondsToVttTimestamp(chapter.endSeconds)}
+${chapter.title.trim()}`)
+  }
+
+  return blocks.join('\n\n') + '\n'
+}
+
+/**
+ * @param {number} seconds
+ */
+function secondsToVttTimestamp(seconds) {
+  const formattedHours = Math.trunc(seconds / 3600).toFixed(0).padStart(2, '0')
+  seconds %= 3600
+
+  const formattedMinutes = Math.trunc(seconds / 60).toFixed(0).padStart(2, '0')
+  seconds %= 60
+
+  const formattedSeconds = seconds.toFixed(3).padStart(6, '0')
+
+  return `${formattedHours}:${formattedMinutes}:${formattedSeconds}`
+}
+
+export const ToastEventBus = new EventTarget()
+
+/**
+ * @param {string | (({elapsedMs: number, remainingMs: number}) => string)} message
  * @param {number} time
  * @param {Function} action
+ * @param {AbortSignal} abortSignal
  */
-export function showToast(message, time = null, action = null) {
-  FtToastEvents.dispatchEvent(new CustomEvent('toast-open', {
+export function showToast(message, time = null, action = null, abortSignal = null) {
+  // Sometimes caller just pass user setting based value in and it can be zero
+  if (time === 0) {
+    console.warn('showToast called with time: 0', { message, time, action, abortSignal })
+    return
+  }
+
+  ToastEventBus.dispatchEvent(new CustomEvent('toast-open', {
     detail: {
       message,
       time,
-      action
+      action,
+      abortSignal,
     }
   }))
 }
@@ -181,7 +219,7 @@ export function showToast(message, time = null, action = null) {
  * This writes to the clipboard. If an error occurs during the copy,
  * a toast with the error is shown. If the copy is successful and
  * there is a success message, a toast with that message is shown.
- * @param {string} content the content to be copied to the clipboard
+ * @param {string|Blob} content the content to be copied to the clipboard (text or image Blob)
  * @param {object} [options] - Optional settings for the copy operation.
  * @param {null|string} options.messageOnSuccess the message to be displayed as a toast when the copy succeeds (optional)
  * @param {null|string} options.messageOnError the message to be displayed as a toast when the copy fails (optional)
@@ -189,20 +227,33 @@ export function showToast(message, time = null, action = null) {
 export async function copyToClipboard(content, { messageOnSuccess = null, messageOnError = null } = {}) {
   if (navigator.clipboard !== undefined && window.isSecureContext) {
     try {
-      await navigator.clipboard.writeText(content)
+      if (content instanceof Blob) {
+        await navigator.clipboard.write([
+          new ClipboardItem({
+            [content.type]: content
+          })
+        ])
+      } else {
+        await navigator.clipboard.writeText(content)
+      }
+
       if (messageOnSuccess !== null) {
         showToast(messageOnSuccess)
       }
     } catch (error) {
-      console.error(`Failed to copy ${content} to clipboard`, error)
+      if (content instanceof Blob) {
+        console.error(`Failed to data of type "${content.type}" to clipboard`, error)
+      } else {
+        console.error(`Failed to copy ${content} to clipboard`, error)
+      }
       if (messageOnError !== null) {
         showToast(`${messageOnError}: ${error}`, 5000)
       } else {
-        showToast(`${i18n.t('Clipboard.Copy failed')}: ${error}`, 5000)
+        showToast(`${i18n.global.t('Clipboard.Copy failed')}: ${error}`, 5000)
       }
     }
   } else {
-    showToast(i18n.t('Clipboard.Cannot access clipboard without a secure connection'), 5000)
+    showToast(i18n.global.t('Clipboard.Cannot access clipboard without a secure connection'), 5000)
   }
 }
 
@@ -211,16 +262,7 @@ export async function copyToClipboard(content, { messageOnSuccess = null, messag
  * @param {string} url the URL to open
  */
 export async function openExternalLink(url) {
-  if (process.env.IS_ELECTRON) {
-    const ipcRenderer = require('electron').ipcRenderer
-    const success = await ipcRenderer.invoke(IpcChannels.OPEN_EXTERNAL_LINK, url)
-
-    if (!success) {
-      showToast(i18n.t('Blocked opening potentially unsafe URL', { url }))
-    }
-  } else {
-    window.open(url, '_blank')
-  }
+  window.open(url, '_blank', 'noreferrer')
 }
 
 /**
@@ -234,9 +276,7 @@ export async function openExternalLink(url) {
  */
 export function openInternalPath({ path, query = undefined, doCreateNewWindow, searchQueryText = null }) {
   if (process.env.IS_ELECTRON && doCreateNewWindow) {
-    const { ipcRenderer } = require('electron')
-
-    ipcRenderer.send(IpcChannels.CREATE_NEW_WINDOW, path, query, searchQueryText)
+    window.ftElectron.openInNewWindow(path, query, searchQueryText)
   } else {
     router.push({
       path,
@@ -295,8 +335,8 @@ export async function readFileWithPicker(
         .join(',')
 
       const fileInput = document.createElement('input')
-      fileInput.setAttribute('type', 'file')
-      fileInput.setAttribute('accept', joinedExtensions)
+      fileInput.type = 'file'
+      fileInput.accept = joinedExtensions
       fileInput.onchange = () => {
         resolve(fileInput.files[0])
         fileInput.onchange = null
@@ -395,8 +435,8 @@ export async function writeFileWithPicker(
     const url = URL.createObjectURL(content)
 
     const downloadLink = document.createElement('a')
-    downloadLink.setAttribute('download', encodeURIComponent(fileName))
-    downloadLink.setAttribute('href', url)
+    downloadLink.download = encodeURIComponent(fileName)
+    downloadLink.href = url
     downloadLink.click()
 
     // Small timeout to give the browser time to react to the click on the link
@@ -405,36 +445,6 @@ export async function writeFileWithPicker(
     }, 1000)
 
     return true
-  }
-}
-
-/**
- * @param {{defaultPath: string, filters: {name: string, extensions: string[]}[]}} options
- * @returns { Promise<import('electron').SaveDialogReturnValue> | {canceled: boolean?, filePath: string } | { canceled: boolean?, handle?: Promise<FileSystemFileHandle> }}
- */
-export async function showSaveDialog (options) {
-  if (process.env.IS_ELECTRON) {
-    const { ipcRenderer } = require('electron')
-    return await ipcRenderer.invoke(IpcChannels.SHOW_SAVE_DIALOG, options)
-  } else {
-    // If the native filesystem api is available
-    if ('showSaveFilePicker' in window) {
-      return {
-        canceled: false,
-        handle: await window.showSaveFilePicker({
-          suggestedName: options.defaultPath.split('/').at(-1),
-          types: options.filters[0]?.extensions?.map((extension) => {
-            return {
-              accept: {
-                'application/octet-stream': '.' + extension
-              }
-            }
-          })
-        })
-      }
-    } else {
-      return { canceled: false, filePath: options.defaultPath }
-    }
   }
 }
 
@@ -461,15 +471,6 @@ export function createWebURL(path) {
     windowPath = windowPath.substring(0, windowPath.length - 1)
   }
   return `${origin}${windowPath}/${path}`
-}
-
-/**
- * strip html tags but keep <br>, <b>, </b> <s>, </s>, <i>, </i>
- * @param {string} value
- * @returns {string}
- */
-export function stripHTML(value) {
-  return value.replaceAll(/(<(?!br|\/?[abis]|img>)([^>]+)>)/gi, '')
 }
 
 /**
@@ -504,7 +505,7 @@ export function formatDurationAsTimestamp(lengthSeconds) {
     seconds = '0' + seconds
   }
 
-  let timestamp = ''
+  let timestamp
   if (hours > 0) {
     timestamp = hours + ':' + minutes + ':' + seconds
   } else {
@@ -515,12 +516,12 @@ export function formatDurationAsTimestamp(lengthSeconds) {
 }
 
 /**
- * @param {{sortBy? : string, time?: string, duration?: string, features: string[]}?} filtersA
- * @param {{sortBy? : string, time?: string, duration?: string, features: string[]}?} filtersB
+ * @param {{prioritize? : string, time?: string, duration?: string, features: string[]}?} filtersA
+ * @param {{prioritize? : string, time?: string, duration?: string, features: string[]}?} filtersB
  * @returns {boolean}
  */
 export function searchFiltersMatch(filtersA, filtersB) {
-  return filtersA?.sortBy === filtersB?.sortBy &&
+  return filtersA?.prioritize === filtersB?.prioritize &&
     filtersA?.time === filtersB?.time &&
     filtersA?.type === filtersB?.type &&
     filtersA?.duration === filtersB?.duration &&
@@ -570,8 +571,7 @@ export function replaceFilenameForbiddenChars(filenameOriginal) {
 export async function getSystemLocale() {
   let locale
   if (process.env.IS_ELECTRON) {
-    const { ipcRenderer } = require('electron')
-    locale = await ipcRenderer.invoke(IpcChannels.GET_SYSTEM_LOCALE)
+    locale = await window.ftElectron.getSystemLocale()
   } else {
     if (navigator && navigator.language) {
       locale = navigator.language
@@ -579,15 +579,6 @@ export async function getSystemLocale() {
   }
 
   return locale || 'en-US'
-}
-
-export async function getPicturesPath() {
-  if (process.env.IS_ELECTRON) {
-    const { ipcRenderer } = require('electron')
-    return await ipcRenderer.invoke(IpcChannels.GET_PICTURES_PATH)
-  } else {
-    return null
-  }
 }
 
 export function extractNumberFromString(str) {
@@ -598,8 +589,40 @@ export function extractNumberFromString(str) {
   }
 }
 
+/**
+ * @param {string} externalPlayer
+ * @param {import('../../constants').UnsupportedPlayerAction} action
+ */
 export function showExternalPlayerUnsupportedActionToast(externalPlayer, action) {
-  const message = i18n.t('Video.External Player.UnsupportedActionTemplate', { externalPlayer, action })
+  let actionString = ''
+
+  switch (action) {
+    case UnsupportedPlayerActions.STARTING_VIDEO_AT_OFFSET:
+      actionString = i18n.global.t('Video.External Player.Unsupported Actions.starting video at offset')
+      break
+    case UnsupportedPlayerActions.PLAYBACK_RATE:
+      actionString = i18n.global.t('Video.External Player.Unsupported Actions.setting a playback rate')
+      break
+    case UnsupportedPlayerActions.OPENING_PLAYLISTS:
+      actionString = i18n.global.t('Video.External Player.Unsupported Actions.opening playlists')
+      break
+    case UnsupportedPlayerActions.PLAYLIST_SPECIFIC_VIDEO:
+      actionString = i18n.global.t('Video.External Player.Unsupported Actions.opening specific video in a playlist (falling back to opening the video)')
+      break
+    case UnsupportedPlayerActions.PLAYLIST_REVERSE:
+      actionString = i18n.global.t('Video.External Player.Unsupported Actions.reversing playlists')
+      break
+    case UnsupportedPlayerActions.PLAYLIST_SHUFFLE:
+      actionString = i18n.global.t('Video.External Player.Unsupported Actions.shuffling playlists')
+      break
+    case UnsupportedPlayerActions.PLAYLIST_LOOP:
+      actionString = i18n.global.t('Video.External Player.Unsupported Actions.looping playlists')
+      break
+  }
+
+  const message = i18n.global.t('Video.External Player.UnsupportedActionTemplate', {
+    externalPlayer, action: actionString
+  })
   showToast(message)
 }
 
@@ -641,15 +664,15 @@ export function getVideoParamsFromUrl(url) {
     // anything with /watch?v=
     function () {
       if (urlObject.pathname === '/watch' && urlObject.searchParams.has('v')) {
-        extractParams(urlObject.searchParams.get('v'))
+        extractParams(urlObject.searchParams.get('v').slice(0, 11))
         paramsObject.playlistId = urlObject.searchParams.get('list')
         return paramsObject
       }
     },
     // youtu.be
     function () {
-      if (urlObject.host === 'youtu.be' && /^\/[\w-]+$/.test(urlObject.pathname)) {
-        extractParams(urlObject.pathname.slice(1))
+      if (urlObject.host === 'youtu.be' && /^\/[\w-]{11,}/.test(urlObject.pathname)) {
+        extractParams(urlObject.pathname.slice(1, 12))
         paramsObject.playlistId = urlObject.searchParams.get('list')
         return paramsObject
       }
@@ -725,7 +748,32 @@ export function toDistractionFreeTitle(title, minUpperCase = 3) {
  * @returns {string}
  */
 export function formatNumber(number, options = undefined) {
-  return Intl.NumberFormat([i18n.locale, 'en'], options).format(number)
+  return Intl.NumberFormat([i18n.global.locale.value, 'en'], options).format(number)
+}
+
+export function isNumberRounded(number) {
+  switch (number.toString().length) {
+    case 11:
+    case 10:
+      return number % 100000000 === 0
+    case 9:
+    case 8:
+      return number % 1000000 === 0
+    case 7:
+      return number % 100000 === 0
+    case 6:
+    case 5:
+      return number % 1000 === 0
+    case 4:
+      return number % 100 === 0
+    default:
+      return false
+  }
+}
+
+export function formatSubscriberCount(number) {
+  // aligns with subscriber count precision outlined here: https://support.google.com/youtube/answer/6051134
+  return formatNumber(number, number >= 1000 ? { notation: 'compact', maximumSignificantDigits: 3 } : undefined)
 }
 
 export function getTodayDateStrLocalTimezone() {
@@ -737,6 +785,24 @@ export function getTodayDateStrLocalTimezone() {
   // e.g. 2011-10-05T14:48:00.000Z
   // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Date/toISOString
   return timeNowStr.split('T')[0]
+}
+
+// Some locales are considered as supported by Chromium but are not translated.
+// This results in "-1 d" being returned instead of "1 day ago".
+// In those cases, force the use of the locale fallback.
+// See https://issues.chromium.org/issues/396060189
+const LOCALES_REQUIRING_FALLBACK = ['az']
+const FALLBACK_LOCALE = 'en'
+const FALLBACK_LOCALES = [FALLBACK_LOCALE]
+
+/**
+ * @param {string} locale
+ * @returns {string[]}
+ */
+export function getLocalesWithFallback(locale) {
+  return LOCALES_REQUIRING_FALLBACK.includes(locale)
+    ? FALLBACK_LOCALES
+    : [locale, FALLBACK_LOCALE]
 }
 
 /**
@@ -758,7 +824,7 @@ export function getRelativeTimeFromDate(date, hideSeconds = false, useThirtyDayM
   let timeUnit = 'second'
 
   if (timeDiffFromNow < 60 && hideSeconds) {
-    return i18n.t('Moments Ago')
+    return i18n.global.t('Moments Ago')
   }
 
   if (timeDiffFromNow >= 60) {
@@ -796,9 +862,10 @@ export function getRelativeTimeFromDate(date, hideSeconds = false, useThirtyDayM
     timeUnit = 'year'
   }
 
+  const locales = getLocalesWithFallback(i18n.global.locale.value)
   // Using `Math.ceil` so that -1.x days ago displayed as 1 day ago
   // Notice that the value is turned to negative to be displayed as "ago"
-  return new Intl.RelativeTimeFormat([i18n.locale, 'en']).format(Math.ceil(-timeDiffFromNow), timeUnit)
+  return new Intl.RelativeTimeFormat(locales).format(Math.ceil(-timeDiffFromNow), timeUnit)
 }
 
 /**
@@ -881,6 +948,19 @@ export function randomArrayItem(array) {
 }
 
 /**
+ * @template T
+ * @param {T[]} array
+ * @param {T} entry
+ */
+export function removeFromArrayIfExists(array, entry) {
+  const index = array.indexOf(entry)
+
+  if (index !== -1) {
+    array.splice(index, 1)
+  }
+}
+
+/**
  * @param {string} text
  */
 export function base64EncodeUtf8(text) {
@@ -936,23 +1016,23 @@ export function getChannelPlaylistId(channelId, type, sortBy) {
 function getIndividualLocalizedShortcut(shortcut) {
   switch (shortcut) {
     case 'alt':
-      return i18n.t('Keys.alt')
+      return i18n.global.t('Keys.alt')
     case 'ctrl':
-      return i18n.t('Keys.ctrl')
+      return i18n.global.t('Keys.ctrl')
     case 'shift':
-      return i18n.t('Keys.shift')
+      return i18n.global.t('Keys.shift')
     case 'enter':
-      return i18n.t('Keys.enter')
+      return i18n.global.t('Keys.enter')
     case 'plus':
-      return i18n.t('Keys.plus')
+      return i18n.global.t('Keys.plus')
     case 'arrowleft':
-      return i18n.t('Keys.arrowleft')
+      return i18n.global.t('Keys.arrowleft')
     case 'arrowright':
-      return i18n.t('Keys.arrowright')
+      return i18n.global.t('Keys.arrowright')
     case 'arrowup':
-      return i18n.t('Keys.arrowup')
+      return i18n.global.t('Keys.arrowup')
     case 'arrowdown':
-      return i18n.t('Keys.arrowdown')
+      return i18n.global.t('Keys.arrowdown')
     default:
       return shortcut
   }
@@ -997,7 +1077,7 @@ export function getLocalizedShortcut(shortcut) {
     return shortcutsAsIcons.join('')
   } else {
     const localizedShortcuts = shortcuts.map((shortcut) => getIndividualLocalizedShortcut(shortcut))
-    const shortcutJoinOperator = i18n.t('shortcutJoinOperator')
+    const shortcutJoinOperator = i18n.global.t('shortcutJoinOperator')
     return localizedShortcuts.join(shortcutJoinOperator)
   }
 }
@@ -1008,7 +1088,7 @@ export function getLocalizedShortcut(shortcut) {
  * @returns {string} the localized action title with keyboard shortcut
  */
 export function addKeyboardShortcutToActionTitle(actionTitle, shortcut) {
-  return i18n.t('KeyboardShortcutTemplate', {
+  return i18n.global.t('KeyboardShortcutTemplate', {
     label: actionTitle,
     shortcut
   })
@@ -1025,7 +1105,7 @@ export function localizeAndAddKeyboardShortcutToActionTitle(localizedActionTitle
     unlocalizedShortcuts = [unlocalizedShortcuts]
   }
   const localizedShortcuts = unlocalizedShortcuts.map((s) => getLocalizedShortcut(s))
-  const shortcutLabelSeparator = i18n.t('shortcutLabelSeparator')
+  const shortcutLabelSeparator = i18n.global.t('shortcutLabelSeparator')
   return addKeyboardShortcutToActionTitle(localizedActionTitle, localizedShortcuts.join(shortcutLabelSeparator))
 }
 
@@ -1050,5 +1130,30 @@ export function debounce(func, wait) {
       timeout = null
       func.apply(context, args)
     }, wait)
+  }
+}
+
+/**
+ * @template {Function} T
+ * @param {T} func
+ * @param {number} wait
+ * @returns {T}
+ */
+export function throttle(func, wait) {
+  let isWaiting
+
+  // Using a fully fledged function here instead of an arrow function
+  // so that we can get `this` and pass it onto the original function.
+  // Vue components using the options API use `this` alot.
+  return function (...args) {
+    const context = this
+    if (!isWaiting) {
+      func.apply(context, args)
+
+      isWaiting = true
+      setTimeout(() => {
+        isWaiting = false
+      }, wait)
+    }
   }
 }

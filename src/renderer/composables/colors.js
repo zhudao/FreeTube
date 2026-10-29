@@ -1,5 +1,5 @@
 import { computed } from 'vue'
-import { useI18n } from './use-i18n-polyfill'
+import { useI18n } from 'vue-i18n'
 
 export function useColorTranslations() {
   const { t } = useI18n()
@@ -35,6 +35,8 @@ export function useColorTranslations() {
     t('Settings.Theme Settings.Main Color Theme.Catppuccin Frappe Sapphire'),
     t('Settings.Theme Settings.Main Color Theme.Catppuccin Frappe Blue'),
     t('Settings.Theme Settings.Main Color Theme.Catppuccin Frappe Lavender'),
+    t('Settings.Theme Settings.Main Color Theme.Catppuccin Latte Mauve'),
+    t('Settings.Theme Settings.Main Color Theme.Catppuccin Latte Red'),
     t('Settings.Theme Settings.Main Color Theme.Catppuccin Mocha Rosewater'),
     t('Settings.Theme Settings.Main Color Theme.Catppuccin Mocha Flamingo'),
     t('Settings.Theme Settings.Main Color Theme.Catppuccin Mocha Pink'),

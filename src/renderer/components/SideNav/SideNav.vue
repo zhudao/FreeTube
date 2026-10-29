@@ -1,7 +1,7 @@
 <template>
   <FtFlexBox
     class="sideNav"
-    :class="[{closed: !isOpen}, applyHiddenLabels]"
+    :class="[{opened: isOpen}, applyHiddenLabels]"
     role="navigation"
   >
     <div
@@ -21,11 +21,9 @@
             :icon="['fas', 'rss']"
             class="navIcon"
             :class="applyNavIconExpand"
-            fixed-width
           />
         </div>
         <p
-          v-if="!hideText"
           class="navLabel"
         >
           {{ $t("Subscriptions.Subscriptions") }}
@@ -44,18 +42,16 @@
             :icon="['fas', 'user-check']"
             class="navIcon"
             :class="applyNavIconExpand"
-            fixed-width
           />
         </div>
         <p
-          v-if="!hideText"
           class="navLabel"
         >
           {{ $t("Channels.Channels") }}
         </p>
       </router-link>
       <router-link
-        v-if="!hideTrendingVideos"
+        v-if="SUPPORTS_LOCAL_API && !hideTrendingVideos && (backendFallback || backendPreference === 'local')"
         class="navOption mobileHidden"
         role="button"
         to="/trending"
@@ -68,11 +64,9 @@
             :icon="['fas', 'fire']"
             class="navIcon"
             :class="applyNavIconExpand"
-            fixed-width
           />
         </div>
         <p
-          v-if="!hideText"
           class="navLabel"
         >
           {{ $t("Trending.Trending") }}
@@ -92,11 +86,9 @@
             :icon="['fas', 'users']"
             class="navIcon"
             :class="applyNavIconExpand"
-            fixed-width
           />
         </div>
         <p
-          v-if="!hideText"
           class="navLabel"
         >
           {{ $t("Most Popular") }}
@@ -113,14 +105,12 @@
           class="thumbnailContainer"
         >
           <FontAwesomeIcon
-            :icon="['fas', 'bookmark']"
+            :icon="['fas', 'list']"
             class="navIcon"
             :class="applyNavIconExpand"
-            fixed-width
           />
         </div>
         <p
-          v-if="!hideText"
           class="navLabel"
         >
           {{ $t("Playlists") }}
@@ -140,11 +130,9 @@
             :icon="['fas', 'history']"
             class="navIcon"
             :class="applyNavIconExpand"
-            fixed-width
           />
         </div>
         <p
-          v-if="!hideText"
           class="navLabel"
         >
           {{ $t("History.History") }}
@@ -152,7 +140,7 @@
       </router-link>
       <hr>
       <router-link
-        class="navOption mobileShow"
+        class="navOption mobileShow smallMobileOnlyHidden"
         role="button"
         to="/settings"
         :title="settingsTitle"
@@ -164,11 +152,9 @@
             :icon="['fas', 'sliders-h']"
             class="navIcon"
             :class="applyNavIconExpand"
-            fixed-width
           />
         </div>
         <p
-          v-if="!hideText"
           class="navLabel"
         >
           {{ $t('Settings.Settings') }}
@@ -187,11 +173,9 @@
             :icon="['fas', 'info-circle']"
             class="navIcon"
             :class="applyNavIconExpand"
-            fixed-width
           />
         </div>
         <p
-          v-if="!hideText"
           class="navLabel"
         >
           {{ $t("About.About") }}
@@ -200,11 +184,14 @@
       <hr>
       <div
         v-if="!hideActiveSubscriptions"
+        class="mobileHidden"
       >
-        <router-link
-          v-for="(channel, index) in activeSubscriptions"
-          :key="index"
+        <component
+          :is="enableChannelLinks ? 'router-link' : 'span'"
+          v-for="channel in activeSubscriptions"
+          :key="channel.id"
           :to="`/channel/${channel.id}`"
+          :class="enableChannelLinks ? '' : 'disabledIcon'"
           class="navChannel channelLink mobileHidden"
           :title="channel.name"
           role="button"
@@ -230,10 +217,11 @@
           <p
             v-if="isOpen"
             class="navLabel"
+            dir="auto"
           >
             {{ channel.name }}
           </p>
-        </router-link>
+        </component>
       </div>
     </div>
   </FtFlexBox>
@@ -242,7 +230,7 @@
 <script setup>
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome'
 import { computed } from 'vue'
-import { useI18n } from '../../composables/use-i18n-polyfill'
+import { useI18n } from 'vue-i18n'
 
 import FtFlexBox from '../ft-flex-box/ft-flex-box.vue'
 import SideNavMoreOptions from '../SideNavMoreOptions/SideNavMoreOptions.vue'
@@ -254,6 +242,8 @@ import { deepCopy, localizeAndAddKeyboardShortcutToActionTitle } from '../../hel
 import { KeyboardShortcuts } from '../../../constants'
 
 const { locale, t } = useI18n()
+
+const SUPPORTS_LOCAL_API = process.env.SUPPORTS_LOCAL_API
 
 /** @type {import('vue').ComputedRef<boolean>} */
 const isOpen = computed(() => {
@@ -360,6 +350,8 @@ const settingsTitle = computed(() => {
     KeyboardShortcuts.APP.GENERAL.NAVIGATE_TO_SETTINGS
   )
 })
+
+const enableChannelLinks = computed(() => !store.getters.getDisableChannelLinks)
 </script>
 
 <style scoped src="./SideNav.css" />

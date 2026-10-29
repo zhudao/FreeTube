@@ -1,5 +1,4 @@
 import shaka from 'shaka-player'
-import { deepCopy } from '../utils'
 import i18n from '../../i18n/index'
 import { sponsorBlockSkipSegments } from '../sponsorblock'
 
@@ -26,7 +25,7 @@ export function logShakaError(error, context, videoId, details) {
   const codeText = Object.keys(Code).find((/** @type {keyof Code} */ key) => Code[key] === error.code)
 
   const message =
-    'Player Error (category and code explainations here: https://shaka-player-demo.appspot.com/docs/api/shaka.util.Error.html)\n' +
+    `Player Error (category and code explainations here: https://shaka-project.github.io/shaka-player/docs/api/shaka.util.Error.html#value%3A${error.code})\n` +
     `Video ID: "${videoId}"\n` +
     `FreeTube player context: "${context}"\n\n` +
     `Severity: ${severityText} (${error.severity})\n` +
@@ -40,17 +39,14 @@ export function logShakaError(error, context, videoId, details) {
   if (error.data && error.data.length > 0) {
     args.push(
       '\n\nshaka-player Data:',
-      error.data
+      JSON.stringify(error.data)
     )
   }
 
   if (details) {
     args.push(
       '\n\nFreeTube data:',
-      // use deepCopy to get rid of Vue's proxying,
-      // as that requires you click the 3 dots for every property in the logged object to see their values
-      // doing it like this, results in a "clean" object where everything is immediately visible
-      typeof details === 'object' ? deepCopy(details) : details
+      typeof details === 'object' ? JSON.stringify(details) : details
     )
   }
 
@@ -98,21 +94,21 @@ export async function getSponsorBlockSegments(videoId, categories) {
 export function translateSponsorBlockCategory(category) {
   switch (category) {
     case 'sponsor':
-      return i18n.t('Video.Sponsor Block category.sponsor')
+      return i18n.global.t('Video.Sponsor Block category.sponsor')
     case 'intro':
-      return i18n.t('Video.Sponsor Block category.intro')
+      return i18n.global.t('Video.Sponsor Block category.intro')
     case 'outro':
-      return i18n.t('Video.Sponsor Block category.outro')
+      return i18n.global.t('Video.Sponsor Block category.outro')
     case 'recap':
-      return i18n.t('Video.Sponsor Block category.recap')
+      return i18n.global.t('Video.Sponsor Block category.recap')
     case 'selfpromo':
-      return i18n.t('Video.Sponsor Block category.self-promotion')
+      return i18n.global.t('Video.Sponsor Block category.self-promotion')
     case 'interaction':
-      return i18n.t('Video.Sponsor Block category.interaction')
+      return i18n.global.t('Video.Sponsor Block category.interaction')
     case 'music_offtopic':
-      return i18n.t('Video.Sponsor Block category.music offtopic')
+      return i18n.global.t('Video.Sponsor Block category.music offtopic')
     case 'filler':
-      return i18n.t('Video.Sponsor Block category.filler')
+      return i18n.global.t('Video.Sponsor Block category.filler')
     default:
       console.error(`Unknown translation for SponsorBlock category ${category}`)
       return category
@@ -131,12 +127,12 @@ export function translateSponsorBlockCategory(category) {
  * }[]} captions
  */
 export function sortCaptions(captions) {
-  const currentLocale = i18n.locale
+  const currentLocale = i18n.global.locale.value
   const userLocale = currentLocale.split('-') // ex. [en,US]
 
   const collator = new Intl.Collator([currentLocale, 'en'])
 
-  return captions.slice().sort((captionA, captionB) => {
+  return captions.sort((captionA, captionB) => {
     const aCode = captionA.language.split('-') // ex. [en,US] or [en]
     const bCode = captionB.language.split('-')
     const aName = captionA.label // ex: english (auto-generated)
@@ -265,7 +261,7 @@ export function repairInvidiousManifest(periods) {
             }
 
             if (audioContent) {
-              let role = ''
+              let role
 
               switch (audioContent) {
                 case 'original':
@@ -329,4 +325,22 @@ export function findMostSimilarAudioBandwidth(variants, bandwidthToMatch) {
   }
 
   return closestVariant
+}
+
+/**
+ * @param {shaka.extern.AudioTrack[]} tracks
+ */
+export function deduplicateAudioTracks(tracks) {
+  /** @type {Map<string, shaka.extern.AudioTrack>} */
+  const knownTracks = new Map()
+
+  for (const track of tracks) {
+    const id = `${track.label}_${track.language}_${track.channelsCount}_${track.spatialAudio}`
+
+    if (!knownTracks.has(id) || track.active) {
+      knownTracks.set(id, track)
+    }
+  }
+
+  return knownTracks
 }

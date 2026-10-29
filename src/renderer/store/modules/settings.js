@@ -1,6 +1,6 @@
 import i18n, { loadLocale } from '../../i18n/index'
 import allLocales from '../../../../static/locales/activeLocales.json'
-import { MAIN_PROFILE_ID, IpcChannels, SyncEvents } from '../../../constants'
+import { MAIN_PROFILE_ID, SyncEvents } from '../../../constants'
 import { DBSettingHandlers } from '../../../datastores/handlers/index'
 import { getSystemLocale, showToast } from '../../helpers/utils'
 
@@ -121,6 +121,15 @@ import { getSystemLocale, showToast } from '../../helpers/utils'
  * to evaluate if it is truly necessary
  * and to ensure that the implementation works as intended.
  *
+ ***
+ * `NON_TRANSFERABLE_SETTINGS`
+ * This set contains setting keys
+ * that should not be exported when a user chooses to "Export settings".
+ *
+ * When adding a new setting, it should be considered
+ * whether this setting can be exported or not. For example, settings
+ * that are OS or user specific like paths should not be exported.
+ *
  ****
  * ENDING NOTES
  *
@@ -143,7 +152,7 @@ import { getSystemLocale, showToast } from '../../helpers/utils'
 const capitalize = str => str.charAt(0).toUpperCase() + str.slice(1)
 const defaultGetterId = settingId => 'get' + capitalize(settingId)
 const defaultMutationId = settingId => 'set' + capitalize(settingId)
-const defaultUpdaterId = settingId => 'update' + capitalize(settingId)
+export const defaultUpdaterId = settingId => 'update' + capitalize(settingId)
 const defaultSideEffectsTriggerId = settingId =>
   'trigger' + capitalize(settingId) + 'SideEffects'
 /*****/
@@ -151,10 +160,9 @@ const defaultSideEffectsTriggerId = settingId =>
 const state = {
   autoplayPlaylists: true,
   autoplayVideos: true,
-  backendFallback: process.env.SUPPORTS_LOCAL_API,
+  backendFallback: false,
   backendPreference: !process.env.SUPPORTS_LOCAL_API ? 'invidious' : 'local',
   barColor: false,
-  checkForBlogPosts: true,
   checkForUpdates: true,
   baseTheme: 'system',
   mainColor: 'Red',
@@ -169,6 +177,7 @@ const state = {
   defaultViewingMode: 'default',
   defaultVideoFormat: 'dash',
   disableSmoothScrolling: false,
+  disableChannelLinks: false,
   displayVideoPlayButton: false,
   enableSearchSuggestions: true,
   enableSubtitlesByDefault: false,
@@ -179,6 +188,7 @@ const state = {
   externalPlayerIgnoreWarnings: false,
   externalPlayerIgnoreDefaultArgs: false,
   externalPlayerCustomArgs: '[]',
+  showAddedExternalPlayerCustomArgs: true,
   expandSideBar: false,
   hideActiveSubscriptions: false,
   hideChannelCommunity: false,
@@ -186,6 +196,7 @@ const state = {
   hideChannelPlaylists: false,
   hideChannelReleases: false,
   hideChannelPodcasts: false,
+  hideChannelCourses: false,
   hideChannelShorts: false,
   hideChannelSubscriptions: false,
   hideCommentLikes: false,
@@ -215,6 +226,7 @@ const state = {
   hideVideoLikesAndDislikes: false,
   hideVideoViews: false,
   hideWatchedSubs: false,
+  hideUploader: false,
   unsubscriptionPopupStatus: false,
   hideLabelsSideBar: false,
   hideChapters: false,
@@ -228,12 +240,15 @@ const state = {
   playNextVideo: false,
   proxyHostname: '127.0.0.1',
   proxyPort: '9050',
+  proxyUsername: '',
+  proxyPassword: '',
   proxyProtocol: 'socks5',
   proxyVideos: !process.env.SUPPORTS_LOCAL_API,
   region: 'US',
   rememberHistory: true,
   rememberSearchHistory: true,
-  saveWatchedProgress: true,
+  // 'auto', 'semi-auto', 'never'
+  watchedProgressSavingMode: 'auto',
   saveVideoHistoryWithLastViewedPlaylist: true,
   showFamilyFriendlyOnly: false,
   sponsorBlockShowSkippedToast: true,
@@ -280,13 +295,10 @@ const state = {
   videoPlaybackRateMouseScroll: false,
   videoSkipMouseScroll: false,
   videoPlaybackRateInterval: 0.25,
-  downloadAskPath: true,
-  downloadFolderPath: '',
-  downloadBehavior: 'open',
   enableScreenshot: false,
+  screenshotMode: 'prompt_folder',
   screenshotFormat: 'png',
   screenshotQuality: 95,
-  screenshotAskPath: !process.env.IS_ELECTRON,
   screenshotFolderPath: '',
   screenshotFilenamePattern: '%Y%M%D-%H%N%S',
   settingsSectionSortEnabled: false,
@@ -295,16 +307,21 @@ const state = {
   useDeArrowTitles: false,
   useDeArrowThumbnails: false,
   deArrowThumbnailGeneratorUrl: 'https://dearrow-thumb.ajay.app',
+  sponsorBlockExcludedChannels: '[]',
+  sponsorBlockShowExcludedChannels: true,
   // This makes the `favorites` playlist uses as quick bookmark target
   // If the playlist is removed quick bookmark is disabled
   quickBookmarkTargetPlaylistId: 'favorites',
   generalAutoLoadMorePaginatedItemsEnabled: false,
+  hideToTrayOnMinimize: false,
 
   // The settings below have side effects
   currentLocale: 'system',
   defaultInvidiousInstance: '',
   defaultVolume: 1,
   uiScale: 100,
+  userPlaylistsSortBy: 'latest_played_first',
+  userHistorySortBy: 'latest_played_first',
 }
 
 const sideEffectHandlers = {
@@ -350,13 +367,6 @@ const sideEffectHandlers = {
 
     const loadPromises = []
 
-    if (targetLocale !== fallbackLocale) {
-      // "en-US" is used as a fallback for missing strings in other locales
-      loadPromises.push(
-        loadLocale(fallbackLocale)
-      )
-    }
-
     // "es" is used as a fallback for "es-AR" and "es-MX"
     if (targetLocale === 'es-AR' || targetLocale === 'es-MX') {
       loadPromises.push(
@@ -377,7 +387,7 @@ const sideEffectHandlers = {
 
     await Promise.allSettled(loadPromises)
 
-    i18n.locale = targetLocale
+    i18n.global.locale.value = targetLocale
     await dispatch('getRegionData', targetLocale)
   },
 
@@ -395,13 +405,54 @@ const sideEffectHandlers = {
 
   uiScale: (_, value) => {
     if (process.env.IS_ELECTRON) {
-      const { webFrame } = require('electron')
-      webFrame.setZoomFactor(value / 100)
+      window.ftElectron.setZoomFactor(value / 100)
     }
-  }
+  },
+
+  maxVideoPlaybackRate: ({ dispatch, state }, value) => {
+    if (state.defaultPlayback > value) {
+      dispatch('updateDefaultPlayback', value)
+    }
+  },
+
+  videoPlaybackRateInterval: ({ dispatch, state }, value) => {
+    const correctedDefaultPlaybackRate = value * Math.round(state.defaultPlayback / value)
+
+    if (state.defaultPlayback !== correctedDefaultPlaybackRate) {
+      dispatch('updateDefaultPlayback', correctedDefaultPlaybackRate)
+    }
+  },
 }
 
 const settingsWithSideEffects = Object.keys(sideEffectHandlers)
+
+export const NON_TRANSFERABLE_SETTINGS = new Set([
+  /* Depends on process.env.IS_ELECTRON */
+  // ProxySettings
+  'useProxy',
+  'proxyProtocol',
+  'proxyHostname',
+  'proxyPort',
+  'proxyUsername',
+  'proxyPassword',
+  // ExternalPlayerSettings
+  'externalPlayer',
+  'externalPlayerExecutable',
+  'externalPlayerIgnoreWarnings',
+  'externalPlayerIgnoreDefaultArgs',
+  'externalPlayerCustomArgs',
+  'showAddedExternalPlayerCustomArgs',
+  // Others
+  'disableSmoothScrolling',
+  'hideToTrayOnMinimize',
+  'screenshotAskPath',
+  'screenshotFolderPath',
+
+  /* Depends on process.env.SUPPORTS_LOCAL_API */
+  'backendFallback',
+  'backendPreference',
+  'proxyVideos',
+])
 
 const customState = {
 }
@@ -444,9 +495,7 @@ const customActions = {
   // Should be a root action, but we'll tolerate
   setupListenersToSyncWindows: ({ commit, dispatch }) => {
     if (process.env.IS_ELECTRON) {
-      const { ipcRenderer } = require('electron')
-
-      ipcRenderer.on(IpcChannels.SYNC_SETTINGS, (_, { event, data }) => {
+      window.ftElectron.handleSyncSettings((event, data) => {
         switch (event) {
           case SyncEvents.GENERAL.UPSERT:
             if (settingsWithSideEffects.includes(data._id)) {
@@ -461,13 +510,13 @@ const customActions = {
         }
       })
 
-      ipcRenderer.on(IpcChannels.SYNC_HISTORY, (_, { event, data }) => {
+      window.ftElectron.handleSyncHistory((event, data) => {
         switch (event) {
           case SyncEvents.GENERAL.UPSERT:
             commit('upsertToHistoryCache', data)
             break
 
-          case SyncEvents.HISTORY.OVERWRITE: {
+          case SyncEvents.GENERAL.OVERWRITE: {
             const byId = {}
             data.forEach(video => {
               byId[video.videoId] = video
@@ -501,10 +550,15 @@ const customActions = {
         }
       })
 
-      ipcRenderer.on(IpcChannels.SYNC_SEARCH_HISTORY, (_, { event, data }) => {
+      window.ftElectron.handleSyncSearchHistory((event, data) => {
         switch (event) {
           case SyncEvents.GENERAL.UPSERT:
             commit('upsertSearchHistoryEntryToList', data)
+            break
+
+          case SyncEvents.GENERAL.OVERWRITE:
+            // It comes pre-sorted, so we don't have to sort it here
+            commit('setSearchHistoryEntries', data)
             break
 
           case SyncEvents.GENERAL.DELETE:
@@ -520,7 +574,7 @@ const customActions = {
         }
       })
 
-      ipcRenderer.on(IpcChannels.SYNC_PROFILES, (_, { event, data }) => {
+      window.ftElectron.handleSyncProfiles((event, data) => {
         switch (event) {
           case SyncEvents.GENERAL.CREATE:
             commit('addProfileToList', data)
@@ -547,7 +601,7 @@ const customActions = {
         }
       })
 
-      ipcRenderer.on(IpcChannels.SYNC_PLAYLISTS, (_, { event, data }) => {
+      window.ftElectron.handleSyncPlaylists((event, data) => {
         switch (event) {
           case SyncEvents.GENERAL.CREATE:
             commit('addPlaylists', data)
@@ -582,7 +636,7 @@ const customActions = {
         }
       })
 
-      ipcRenderer.on(IpcChannels.SYNC_SUBSCRIPTION_CACHE, (_, { event, data }) => {
+      window.ftElectron.handleSyncSubscriptionCache((event, data) => {
         switch (event) {
           case SyncEvents.SUBSCRIPTION_CACHE.UPDATE_VIDEOS_BY_CHANNEL:
             commit('updateVideoCacheByChannel', data)

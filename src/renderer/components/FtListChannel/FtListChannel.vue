@@ -8,7 +8,8 @@
     }"
   >
     <div class="channelThumbnail">
-      <router-link
+      <component
+        :is="enableChannelLinks ? 'router-link' : 'div'"
         :to="`/channel/${id}`"
         class="channelThumbnailLink"
         tabindex="-1"
@@ -19,45 +20,52 @@
           :class="!isGame ? 'channelImage' : 'gameImage'"
           alt=""
         >
-      </router-link>
+      </component>
     </div>
     <div class="infoAndSubscribe">
       <div class="info">
-        <router-link
+        <component
+          :is="enableChannelLinks ? 'router-link' : 'span'"
           class="title"
           :to="`/channel/${id}`"
         >
-          <h3 class="h3Title">
+          <h3
+            class="h3Title"
+            dir="auto"
+          >
             {{ name }}
           </h3>
-        </router-link>
+        </component>
         <div class="infoLine">
-          <router-link
+          <component
+            :is="enableChannelLinks ? 'router-link' : 'span'"
             v-if="handle !== null"
             class="handle"
+            dir="auto"
             :to="`/channel/${id}`"
           >
             {{ handle }}
-          </router-link>
+          </component>
           <span
             v-if="subscriberCount !== null && !hideChannelSubscriptions"
             class="subscriberCount"
           >
             <template v-if="handle !== null"> • </template>
-            {{ $tc('Global.Counts.Subscriber Count', subscriberCount, {count: formattedSubscriberCount}) }}
+            {{ $t('Global.Counts.Subscriber Count', {count: formattedSubscriberCount}, subscriberCount) }}
           </span>
           <span
             v-if="handle == null && videoCount != null"
             class="videoCount"
           >
             <template v-if="subscriberCount !== null && !hideChannelSubscriptions"> • </template>
-            {{ $tc('Global.Counts.Video Count', videoCount, {count: formattedVideoCount}) }}
+            {{ $t('Global.Counts.Video Count', {count: formattedVideoCount}, videoCount) }}
           </span>
         </div>
         <p
           v-if="listType !== 'grid'"
+          v-safer-html="description"
           class="description"
-          v-html="description"
+          dir="auto"
         />
       </div>
       <FtSubscribeButton
@@ -75,11 +83,12 @@
 import { computed } from 'vue'
 
 import FtSubscribeButton from '../FtSubscribeButton/FtSubscribeButton.vue'
+import { vSaferHtml } from '../../directives/vSaferHtml'
 
 import store from '../../store/index'
 
 import { youtubeImageUrlToInvidious } from '../../helpers/api/invidious'
-import { formatNumber } from '../../helpers/utils'
+import { formatNumber, formatSubscriberCount } from '../../helpers/utils'
 
 const props = defineProps({
   data: {
@@ -112,6 +121,8 @@ const hideUnsubscribeButton = computed(() => {
   return store.getters.getHideUnsubscribeButton
 })
 
+const enableChannelLinks = computed(() => !store.getters.getDisableChannelLinks)
+
 let id = ''
 let thumbnail = ''
 let name = ''
@@ -132,7 +143,7 @@ if (process.env.SUPPORTS_LOCAL_API && props.data.dataSource === 'local') {
 
 const formattedSubscriberCount = computed(() => {
   if (subscriberCount != null) {
-    return formatNumber(subscriberCount)
+    return formatSubscriberCount(subscriberCount)
   }
 
   return ''
@@ -155,7 +166,7 @@ function parseLocalData() {
     subscriberCount = props.data.subscribers
   }
 
-  if (props.data.videoCount != null) {
+  if (props.data.videos != null) {
     videoCount = props.data.videos
   }
 

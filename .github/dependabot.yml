@@ -9,18 +9,16 @@ updates:
       - "PR: dependencies"
     open-pull-requests-limit: 15
     groups:
-      babel:
-        patterns:
-          - "@babel/*"
-          - "babel-*"
       eslint:
         patterns:
           - "eslint"
           - "eslint-*"
           - "@eslint/*"
-          - "yaml-eslint-parser"
           - "vue-eslint-parser"
           - "neostandard"
+          - "@intlify/eslint-plugin-vue-i18n"
+          - "@stylistic/eslint-plugin"
+          - "globals"
       stylelint:
         patterns:
           - "stylelint"
@@ -31,6 +29,16 @@ updates:
       fortawesome:
         patterns:
           - "@fortawesome/*"
+      webpack:
+        patterns:
+          - "cssnano"
+          - "css-loader"
+          - "mini-css-extract-plugin"
+          - "sass"
+          - "sass-loader"
+          - "webpack"
+          - "webpack-*"
+          - "*-webpack-plugin"
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
@@ -38,3 +46,10 @@ updates:
     labels:
       - "PR: waiting for review"
       - "PR: dependencies"
+    groups:
+      "actions/cache":
+        patterns:
+          - "actions/cache/*"
+      "github/codeql-action":
+        patterns:
+          - "github/codeql-action/*"

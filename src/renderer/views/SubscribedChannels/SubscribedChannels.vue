@@ -5,19 +5,18 @@
         <FontAwesomeIcon
           :icon="['fas', 'user-check']"
           class="headingIcon"
-          fixed-width
         />
         {{ $t('Channels.Title') }}
       </h2>
       <ft-input
-        v-show="subscribedChannels.length > 0"
+        v-show="subscribedChannels.length > 1"
         ref="searchBarChannels"
         :placeholder="$t('Channels.Search bar placeholder')"
         :value="query"
         :show-clear-text-button="true"
         :show-action-button="false"
         :maxlength="255"
-        @input="(input) => handleQueryChange(input)"
+        @input="handleQueryChange"
         @clear="() => handleQueryChange('')"
       />
       <ft-flex-box
@@ -37,7 +36,8 @@
             :key="channel.id"
             class="channel"
           >
-            <router-link
+            <component
+              :is="enableChannelLinks ? 'router-link' : 'span'"
               tabindex="-1"
               class="thumbnailContainer"
               :to="`/channel/${channel.id}`"
@@ -54,14 +54,16 @@
                 class="channelThumbnail"
                 :icon="['fas', 'circle-user']"
               />
-            </router-link>
-            <router-link
+            </component>
+            <component
+              :is="enableChannelLinks ? 'router-link' : 'span'"
               class="channelName"
+              dir="auto"
               :title="channel.name"
               :to="`/channel/${channel.id}`"
             >
               {{ channel.name }}
-            </router-link>
+            </component>
             <div
               v-if="!hideUnsubscribeButton"
               class="unsubscribeContainer"
@@ -81,17 +83,17 @@
 </template>
 
 <script setup>
-import { computed, onMounted, onBeforeUnmount, ref, watch } from 'vue'
-import { isNavigationFailure, NavigationFailureType } from 'vue-router'
-import { useRoute, useRouter } from 'vue-router/composables'
+import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome'
+import { computed, onMounted, onBeforeUnmount, ref, watch, useTemplateRef } from 'vue'
+import { isNavigationFailure, NavigationFailureType, useRoute, useRouter } from 'vue-router'
 import FtCard from '../../components/ft-card/ft-card.vue'
 import FtFlexBox from '../../components/ft-flex-box/ft-flex-box.vue'
-import FtInput from '../../components/ft-input/ft-input.vue'
+import FtInput from '../../components/FtInput/FtInput.vue'
 import FtSubscribeButton from '../../components/FtSubscribeButton/FtSubscribeButton.vue'
 import { invidiousGetChannelInfo, youtubeImageUrlToInvidious, invidiousImageUrlToInvidious } from '../../helpers/api/invidious'
 import { getLocalChannel, parseLocalChannelHeader } from '../../helpers/api/local'
 import { ctrlFHandler, debounce } from '../../helpers/utils'
-import { useI18n } from '../../composables/use-i18n-polyfill.js'
+import { useI18n } from 'vue-i18n'
 import store from '../../store/index'
 
 const route = useRoute()
@@ -110,8 +112,7 @@ const query = ref('')
 const subscribedChannels = ref([])
 const filteredChannels = ref([])
 
-/** @type {import('vue').Ref<HTMLInputElement | null>} */
-const searchBarChannels = ref(null)
+const searchBarChannels = useTemplateRef('searchBarChannels')
 
 /** @type {import('vue').ComputedRef<object>} */
 const activeProfile = computed(() => {
@@ -289,5 +290,8 @@ onMounted(() => {
 onBeforeUnmount(() => {
   document.removeEventListener('keydown', keyboardShortcutHandler)
 })
+
+const enableChannelLinks = computed(() => !store.getters.getDisableChannelLinks)
+
 </script>
 <style scoped src="./SubscribedChannels.css" />

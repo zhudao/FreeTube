@@ -3,7 +3,7 @@ process.env.NODE_ENV = 'development'
 const electron = require('electron')
 const webpack = require('webpack')
 const WebpackDevServer = require('webpack-dev-server')
-const kill = require('tree-kill')
+const kill = require('@magda/tree-kill')
 
 const path = require('path')
 const { spawn } = require('child_process')
@@ -18,17 +18,15 @@ const web = process.argv.indexOf('--web') !== -1
 
 let mainConfig
 let rendererConfig
+let preloadConfig
 let botGuardScriptConfig
 let webConfig
-let SHAKA_LOCALES_TO_BE_BUNDLED
 
 if (!web) {
   mainConfig = require('./webpack.main.config')
   rendererConfig = require('./webpack.renderer.config')
+  preloadConfig = require('./webpack.preload.config.js')
   botGuardScriptConfig = require('./webpack.botGuardScript.config')
-
-  SHAKA_LOCALES_TO_BE_BUNDLED = rendererConfig.SHAKA_LOCALES_TO_BE_BUNDLED
-  delete rendererConfig.SHAKA_LOCALES_TO_BE_BUNDLED
 } else {
   webConfig = require('./webpack.web.config')
 }
@@ -132,46 +130,86 @@ function startMain() {
   })
 }
 
+function startPreload() {
+  const compiler = webpack(preloadConfig)
+  const { name } = compiler
+
+  let firstTime = true
+
+  compiler.hooks.afterEmit.tap('afterEmit', async () => {
+    console.log(`\nCompiled ${name} script!`)
+
+    if (firstTime) {
+      firstTime = false
+    } else {
+      manualRestart = true
+      await restartElectron()
+      setTimeout(() => {
+        manualRestart = false
+      }, 2500)
+    }
+
+    console.log(`\nWatching file changes for ${name} script...`)
+  })
+
+  compiler.watch({
+    aggregateTimeout: 500,
+  },
+  err => {
+    if (err) console.error(err)
+  })
+}
+
 function startRenderer(callback) {
   const compiler = webpack(rendererConfig)
   const { name } = compiler
 
-  compiler.hooks.afterEmit.tap('afterEmit', () => {
-    console.log(`\nCompiled ${name} script!`)
-    console.log(`\nWatching file changes for ${name} script...`)
-  })
-
   const server = new WebpackDevServer({
+    client: {
+      overlay: {
+        runtimeErrors: false
+      }
+    },
     static: [
       {
         directory: path.resolve(__dirname, '..', 'static'),
         watch: {
           ignored: [
-            /(dashFiles|storyboards)\/*/,
-            '/**/.DS_Store',
-            '**/static/locales/*'
+            /\.DS_Store/,
+            path.resolve(__dirname, '..', 'static', 'locales'),
+            path.resolve(__dirname, '..', 'static', 'pwabuilder-sw.js'),
+            path.resolve(__dirname, '..', 'static', 'manifest.json')
           ]
         },
         publicPath: '/static'
       },
       {
-        directory: path.resolve(__dirname, '..', 'node_modules', 'shaka-player', 'ui', 'locales'),
-        publicPath: '/static/shaka-player-locales',
-        watch: {
-          // Ignore everything that isn't one of the locales that we would bundle in production mode
-          ignored: `**/!(${SHAKA_LOCALES_TO_BE_BUNDLED.join('|')}).json`
-        }
+        directory: path.dirname(require.resolve('shaka-player/ui/locales/en.json')),
+        publicPath: '/static/shaka-player-locales'
       }
     ],
     port
-  }, compiler)
+  })
 
-  server.startCallback(err => {
+  server.apply(compiler)
+
+  setupNotifyLocaleUpdate(compiler, server)
+
+  let firstTime = true
+
+  compiler.watch({ aggregateTimeout: 250 }, (err, result) => {
     if (err) console.error(err)
 
-    setupNotifyLocaleUpdate(compiler, server)
+    if (result) {
+      console.log('\n' + result.toString({ colors: true }))
+    }
 
-    callback()
+    console.log(`\nCompiled ${name} script!\n\nWatching file changes for ${name} script...`)
+
+    if (firstTime) {
+      firstTime = false
+      callback()
+    }
   })
 }
 
@@ -179,35 +217,45 @@ function startWeb () {
   const compiler = webpack(webConfig)
   const { name } = compiler
 
-  compiler.hooks.afterEmit.tap('afterEmit', () => {
-    console.log(`\nCompiled ${name} script!`)
-    console.log(`\nWatching file changes for ${name} script...`)
-  })
-
   const server = new WebpackDevServer({
     open: true,
-    static: {
-      directory: path.resolve(__dirname, '..', 'static'),
-      watch: {
-        ignored: [
-          /(dashFiles|storyboards)\/*/,
-          '/**/.DS_Store',
-          '**/static/locales/*'
-        ]
+    static: [
+      {
+        directory: path.resolve(__dirname, '..', 'static'),
+        watch: {
+          ignored: [
+            /\.DS_Store/,
+            path.resolve(__dirname, '..', 'static', 'locales')
+          ]
+        },
+        publicPath: '/static'
+      },
+      {
+        directory: path.dirname(require.resolve('shaka-player/ui/locales/en.json')),
+        publicPath: '/static/shaka-player-locales'
       }
-    },
+    ],
     port
-  }, compiler)
+  })
 
-  server.startCallback(err => {
+  server.apply(compiler)
+
+  setupNotifyLocaleUpdate(compiler, server)
+
+  compiler.watch({ aggregateTimeout: 250 }, (err, result) => {
     if (err) console.error(err)
 
-    setupNotifyLocaleUpdate(compiler, server)
+    if (result) {
+      console.log('\n' + result.toString({ colors: true }))
+    }
+
+    console.log(`\nCompiled ${name} script!\n\nWatching file changes for ${name} script...`)
   })
 }
 if (!web) {
   startRenderer(() => {
     startBotGuardScript()
+    startPreload()
     startMain()
   })
 } else {

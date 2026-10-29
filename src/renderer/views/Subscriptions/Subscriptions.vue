@@ -5,7 +5,6 @@
         <FontAwesomeIcon
           :icon="['fas', 'rss']"
           class="subscriptionIcon"
-          fixed-width
         />
         {{ $t("Subscriptions.Subscriptions") }}
       </h2>
@@ -20,7 +19,7 @@
           ref="videosTab"
           class="tab"
           role="tab"
-          :aria-selected="String(currentTab === 'videos')"
+          :aria-selected="currentTab === 'videos'"
           aria-controls="subscriptionsPanel"
           :tabindex="currentTab === 'videos' ? 0 : -1"
           :class="{ selectedTab: currentTab === 'videos' }"
@@ -31,7 +30,6 @@
           <FontAwesomeIcon
             :icon="['fa', 'video']"
             class="subscriptionIcon"
-            fixed-width
           />
           {{ $t("Global.Videos") }}
         </div>
@@ -41,7 +39,7 @@
           ref="shortsTab"
           class="tab"
           role="tab"
-          :aria-selected="String(currentTab === 'shorts')"
+          :aria-selected="currentTab === 'shorts'"
           aria-controls="subscriptionsPanel"
           :tabindex="currentTab === 'shorts' ? 0 : -1"
           :class="{ selectedTab: currentTab === 'shorts' }"
@@ -52,7 +50,6 @@
           <FontAwesomeIcon
             :icon="['fa', 'clapperboard']"
             class="subscriptionIcon"
-            fixed-width
           />
           {{ $t("Global.Shorts") }}
         </div>
@@ -62,7 +59,7 @@
           ref="liveTab"
           class="tab"
           role="tab"
-          :aria-selected="String(currentTab === 'live')"
+          :aria-selected="currentTab === 'live'"
           aria-controls="subscriptionsPanel"
           :tabindex="currentTab === 'live' ? 0 : -1"
           :class="{ selectedTab: currentTab === 'live' }"
@@ -73,17 +70,16 @@
           <FontAwesomeIcon
             :icon="['fa', 'tower-broadcast']"
             class="subscriptionIcon"
-            fixed-width
           />
           {{ $t("Global.Live") }}
         </div>
         <!-- eslint-disable-next-line vuejs-accessibility/interactive-supports-focus -->
         <div
-          v-if="visibleTabs.includes('community')"
+          v-if="!hideSubscriptionsCommunity"
           ref="communityTab"
           class="tab"
           role="tab"
-          :aria-selected="String(currentTab === 'community')"
+          :aria-selected="currentTab === 'community'"
           aria-controls="subscriptionsPanel"
           :tabindex="currentTab === 'community' ? 0 : -1"
           :class="{ selectedTab: currentTab === 'community' }"
@@ -94,9 +90,8 @@
           <FontAwesomeIcon
             :icon="['fa', 'message']"
             class="subscriptionIcon"
-            fixed-width
           />
-          {{ $t("Global.Community") }}
+          {{ $t("Global.Posts") }}
         </div>
       </FtFlexBox>
       <SubscriptionsVideos
@@ -114,7 +109,7 @@
         id="subscriptionsPanel"
         role="tabpanel"
       />
-      <SubscriptionsCommunity
+      <SubscriptionsPosts
         v-else-if="currentTab === 'community'"
         id="subscriptionsPanel"
         role="tabpanel"
@@ -130,14 +125,15 @@
 </template>
 
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome'
+import { computed, ref, useTemplateRef, watch } from 'vue'
 
 import FtCard from '../../components/ft-card/ft-card.vue'
 import FtFlexBox from '../../components/ft-flex-box/ft-flex-box.vue'
-import SubscriptionsVideos from '../../components/subscriptions-videos/subscriptions-videos.vue'
-import SubscriptionsLive from '../../components/subscriptions-live/subscriptions-live.vue'
-import SubscriptionsShorts from '../../components/subscriptions-shorts/subscriptions-shorts.vue'
-import SubscriptionsCommunity from '../../components/subscriptions-community/subscriptions-community.vue'
+import SubscriptionsVideos from '../../components/SubscriptionsVideos.vue'
+import SubscriptionsLive from '../../components/SubscriptionsLive.vue'
+import SubscriptionsShorts from '../../components/SubscriptionsShorts.vue'
+import SubscriptionsPosts from '../../components/SubscriptionPosts/SubscriptionsPosts.vue'
 
 import store from '../../store/index'
 
@@ -159,16 +155,6 @@ const hideSubscriptionsLive = computed(() => {
 /** @type {import('vue').ComputedRef<boolean>} */
 const hideSubscriptionsCommunity = computed(() => {
   return store.getters.getHideSubscriptionsCommunity
-})
-
-/** @type {import('vue').ComputedRef<any[]>} */
-const activeSubscriptionList = computed(() => {
-  return store.getters.getActiveProfile.subscriptions
-})
-
-/** @type {import('vue').ComputedRef<boolean>} */
-const useRssFeeds = computed(() => {
-  return store.getters.getUseRssFeeds
 })
 
 /** @type {import('vue').Ref<'videos' | 'shorts' | 'live' | 'community' | null>} */
@@ -199,8 +185,7 @@ const visibleTabs = computed(() => {
     tabs.push('live')
   }
 
-  // community does not support rss
-  if (!hideSubscriptionsCommunity.value && !useRssFeeds.value && activeSubscriptionList.value.length < 125) {
+  if (!hideSubscriptionsCommunity.value) {
     tabs.push('community')
   }
 
@@ -243,14 +228,10 @@ function changeTab(tab) {
   }
 }
 
-/** @type {import('vue').Ref<HTMLDivElement | null>} */
-const videosTab = ref(null)
-/** @type {import('vue').Ref<HTMLDivElement | null>} */
-const liveTab = ref(null)
-/** @type {import('vue').Ref<HTMLDivElement | null>} */
-const shortsTab = ref(null)
-/** @type {import('vue').Ref<HTMLDivElement | null>} */
-const communityTab = ref(null)
+const videosTab = useTemplateRef('videosTab')
+const liveTab = useTemplateRef('liveTab')
+const shortsTab = useTemplateRef('shortsTab')
+const communityTab = useTemplateRef('communityTab')
 
 /**
  * @param {KeyboardEvent} event

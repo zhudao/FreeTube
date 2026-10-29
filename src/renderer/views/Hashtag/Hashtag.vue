@@ -13,9 +13,8 @@
           :icon="['fas', 'hashtag']"
           aria-hidden="false"
           class="headingIcon"
-          fixed-width
         />
-        {{ hashtag }}
+        <bdi>{{ hashtag }}</bdi>
       </h2>
       <FtElementList
         v-if="videos.length > 0"
@@ -40,8 +39,7 @@
           role="button"
           tabindex="0"
           @click="handleFetchMore"
-          @keydown.space.prevent="handleFetchMore"
-          @keydown.enter.prevent="handleFetchMore"
+          @keydown.enter.space.prevent="handleFetchMore"
         >
           <FontAwesomeIcon :icon="['fas', 'search']" /> {{ $t("Search Filters.Fetch more results") }}
         </div>
@@ -55,16 +53,15 @@ import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome'
 import FtCard from '../../components/ft-card/ft-card.vue'
 import FtElementList from '../../components/FtElementList/FtElementList.vue'
 import FtFlexBox from '../../components/ft-flex-box/ft-flex-box.vue'
-import FtLoader from '../../components/ft-loader/ft-loader.vue'
-import FtAutoLoadNextPageWrapper from '../../components/ft-auto-load-next-page-wrapper/ft-auto-load-next-page-wrapper.vue'
+import FtLoader from '../../components/FtLoader/FtLoader.vue'
+import FtAutoLoadNextPageWrapper from '../../components/FtAutoLoadNextPageWrapper.vue'
 import store from '../../store/index'
-import { useRoute } from 'vue-router/composables'
-import packageDetails from '../../../../package.json'
+import { useRoute } from 'vue-router'
 import { getHashtagLocal, parseLocalListVideo } from '../../helpers/api/local'
 import { copyToClipboard, showToast } from '../../helpers/utils'
 import { isNullOrEmpty } from '../../helpers/strings'
 import { getHashtagInvidious } from '../../helpers/api/invidious'
-import { useI18n } from '../../composables/use-i18n-polyfill'
+import { useI18n } from 'vue-i18n'
 const { t } = useI18n()
 
 const route = useRoute()
@@ -116,7 +113,7 @@ async function getHashtag() {
   } else {
     await getInvidiousHashtag()
   }
-  store.commit('setAppTitle', `#${hashtag.value} - ${packageDetails.productName}`)
+  store.commit('setAppTitle', `#${hashtag.value}`)
 }
 
 /**
@@ -148,7 +145,7 @@ async function getInvidiousHashtag(page = 1) {
 async function getLocalHashtag() {
   try {
     const hashtagData = await getHashtagLocal(hashtag.value)
-    videos.value = hashtagData.videos.map(parseLocalListVideo)
+    videos.value = hashtagData.videos.map((video) => parseLocalListVideo(video)).filter(_ => _)
     apiUsed.value = 'local'
     hashtagContinuationData.value = hashtagData.has_continuation ? hashtagData : null
     isLoading.value = false
@@ -171,7 +168,7 @@ async function getLocalHashtag() {
 async function getLocalHashtagMore() {
   try {
     const continuation = await hashtagContinuationData.value.getContinuation()
-    const newVideos = continuation.videos.map(parseLocalListVideo)
+    const newVideos = continuation.videos.map((video) => parseLocalListVideo(video)).filter(_ => _)
     hashtagContinuationData.value = continuation.has_continuation ? continuation : null
     videos.value = videos.value.concat(newVideos)
   } catch (error) {

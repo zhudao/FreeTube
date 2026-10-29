@@ -12,9 +12,10 @@
  */
 
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs'
-import { Innertube, Misc } from 'youtubei.js'
+import path from 'path'
+import { Misc, Session } from 'youtubei.js'
 
-const STATIC_DIRECTORY = `${import.meta.dirname}/../static`
+const STATIC_DIRECTORY = path.resolve(import.meta.dirname, '../static')
 
 const activeLanguagesPath = `${STATIC_DIRECTORY}/locales/activeLocales.json`
 /** @type {string[]} */
@@ -27,6 +28,7 @@ const initialResponse = await scrapeLanguage('en')
 
 /** @type {string[]} */
 const youTubeLanguages = initialResponse.data.actions[0].openPopupAction.popup.multiPageMenuRenderer.sections[0].multiPageMenuSectionRenderer.items[2].compactLinkRenderer.serviceEndpoint.signalServiceEndpoint.actions[0].getMultiPageMenuAction.menu.multiPageMenuRenderer.sections[0].multiPageMenuSectionRenderer.items
+  .filter(({ compactLinkRenderer }) => compactLinkRenderer)
   .map(({ compactLinkRenderer }) => {
     return compactLinkRenderer.serviceEndpoint.signalServiceEndpoint.actions[0].selectLanguageCommand.hl
   })
@@ -119,8 +121,11 @@ for (const { youTube, freeTube } of languagesToScrape) {
   processGeolocations(freeTube, youTube, response)
 }
 
+/**
+ * @param {string} youTubeLanguageCode
+ */
 async function scrapeLanguage(youTubeLanguageCode) {
-  const session = await Innertube.create({
+  const session = await Session.create({
     retrieve_player: false,
     generate_session_locally: true,
     lang: youTubeLanguageCode
@@ -129,7 +134,13 @@ async function scrapeLanguage(youTubeLanguageCode) {
   return await session.actions.execute('/account/account_menu')
 }
 
+/**
+ * @param {string} freeTubeLanguage
+ * @param {string} youTubeLanguage
+ * @param {import('youtubei.js').ApiResponse} response
+ */
 function processGeolocations(freeTubeLanguage, youTubeLanguage, response) {
+  /** @type {{ name: string, code: string }[]} */
   const geolocations = response.data.actions[0].openPopupAction.popup.multiPageMenuRenderer.sections[0].multiPageMenuSectionRenderer.items[4].compactLinkRenderer.serviceEndpoint.signalServiceEndpoint.actions[0].getMultiPageMenuAction.menu.multiPageMenuRenderer.sections[0].multiPageMenuSectionRenderer.items
     .map(({ compactLinkRenderer }) => {
       return {
@@ -158,5 +169,10 @@ function processGeolocations(freeTubeLanguage, youTubeLanguage, response) {
     geolocations.sort((a, b) => collator.compare(a.name, b.name))
   }
 
-  writeFileSync(`${STATIC_DIRECTORY}/geolocations/${freeTubeLanguage}.json`, JSON.stringify(geolocations))
+  const output = {
+    names: geolocations.map(entry => entry.name),
+    codes: geolocations.map(entry => entry.code)
+  }
+
+  writeFileSync(`${STATIC_DIRECTORY}/geolocations/${freeTubeLanguage}.json`, JSON.stringify(output))
 }

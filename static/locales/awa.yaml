@@ -1,8 +1,5 @@
 # Put the name of your locale in the same language
-Locale Name: 'अंगरेजी (अमरीका)'
-# Currently on Subscriptions, Playlists, and History
-'This part of the app is not ready yet. Come back later when progress has been made.': >-
-  ऐप कै ई हिस्सा अबहीं तक तैयार नही बाटै। जब तइयार होइ जाय तब बाद मा वापस आवा।
+Locale Name: 'अवधी'
 
 # Webkit Menu Bar
 File: 'फाइल'
@@ -17,8 +14,6 @@ Copy: 'कॉपी करा'
 Paste: 'पेस्ट करा (चिपकावा)'
 Delete: 'मिटावा'
 Select all: 'सगरौ चुना'
-Reload: 'फिर से लोड करा'
-Force Reload: 'जबरदस्ती फिर से लोड करा'
 Toggle Developer Tools: 'टागल डेबलपर टूल्स'
 Actual size: 'सही साइज'
 Zoom in: 'जूम करा'
@@ -34,11 +29,8 @@ Open New Window: 'नई बिंडो खोला'
 Go to page: '{page} पै जा'
 Close Banner: 'बैनर बंद करा'
 
-Version {versionNumber} is now available!  Click for more details: 'वर्जन {versionNumber}
-  अब मौजूद अहइ! अउर जानकारी के बरे क्लिक करा'
+Version {versionNumber} is now available!  Click for more details: 'वर्जन {versionNumber} अब मौजूद अहइ! अउर जानकारी के बरे क्लिक करा'
 Download From Site: 'साइट से डाउनलोड करा'
-A new blog is now available, {blogTitle}. Click to view more: 'एक नया ब्लॉग अब मौजूद
-  बाटै, {blogTitle}। अउर देखै की ताईं क्लिक करा'
 Are you sure you want to open this link?: 'का तू पक्का ई लिंक खोलै चाहत हौ?'
 
 # Global
@@ -47,7 +39,6 @@ Global:
   Videos: 'वीडियोज'
   Shorts: 'सार्ट्स'
   Live: 'लाइव'
-  Community: 'समाज (कम्युनिटी)'
   Sort By: 'लाइन से लगावा'
   Counts:
     Video Count: '1 वीडियो | {count} वीडियोज'
@@ -63,8 +54,7 @@ Search / Go to URL: 'हेरा / यूआरएल पै जा'
 Search Bar:
   Clear Input: 'इनपुट साफ़ करा'
   Remove: 'हटावा'
-Search character limit: 'सर्च क्वेरी {searchCharacterLimit} करेक्टर सीमा से उप्पर
-  है'
+Search character limit: 'सर्च क्वेरी {searchCharacterLimit} करेक्टर सीमा से उप्पर है'
 Search Listing:
   Label:
     4K: '4के'
@@ -79,15 +69,11 @@ Search Listing:
   # In Filter Button
 Search Filters:
   Search Filters: 'हेरय कै फिलटर'
-  Sort By:
+  Prioritize:
     Most Relevant: 'सबसे ठीक'
-    Rating: 'रेटिंग'
-    Upload Date: 'अपलोड तारिख'
-    View Count: 'ब्यू कै गिनती'
   Time:
     Time: 'समय'
     Any Time: 'कबो भी'
-    Last Hour: 'पिछले घंटा'
     Today: 'आज'
     This Week: 'यहि हफ्ता'
     This Month: 'यहि महीना'
@@ -102,9 +88,6 @@ Search Filters:
   Duration:
     Duration: 'मियाद'
     All Durations: 'सब अवधि (मियाद)'
-    Short (< 4 minutes): '4 मिनट से छोट'
-    Medium (4 - 20 minutes): 'मद्धिम 4 से 20 मिनट कै'
-    Long (> 20 minutes): 'बड़वार 20 मिनट से जादा'
   Features:
     Features: 'सुबिधा'
     HD: 'एचडी'
@@ -121,23 +104,16 @@ Search Filters:
   Search Results: 'खोजा गवा परिनाम'
   Fetching results. Please wait: 'परिनाम लावत अहै। इन्तजार करा'
   Fetch more results: 'अउर परिनाम लावा'
-  There are no more results for this search: 'यहि खोज के बरे अउर कवनो परिनाम नाही
-    है'
+  There are no more results for this search: 'यहि खोज के बरे अउर कवनो परिनाम नाही है'
 # Sidebar
 Subscriptions:
     # On Subscriptions Page
   Subscriptions: 'सब्सक्रिप्सन'
   # channels that were likely deleted
   Error Channels: 'गलती वाले चैनल'
-  This profile has a large number of subscriptions. Forcing RSS to avoid rate limiting: 'यहि
-    प्रोफ़ाइल के पास ढेर सब्सक्रिप्शनस है।  RSS का जोर से परयोग कइके रेट लिमिटिंग
-    से बचावा'
-  'Your Subscription list is currently empty. Start adding subscriptions to see them here.': 'तोहाय
-    सदस्सता सूची येह समय खाली अहै। अगर तू आपन सदस्यता इम्पोर्ट करै चाहत हैं तौ तू
-    डेटा सेटिंग्स मा जाइ सकत हौ अउर सदस्सता इम्पोर्ट करै का चुनि सकत हौ या तू एक चैनल
-    हेर सकत हौ अउर उनकै सदस्सता लइ सकत हौ।'
-  Disabled Automatic Fetching: 'तू अपने आप सदस्सता लावै का स्वचालित सदस्यता लावै का
-    बंद केहे अहा। उनका हिंया देखै की ताईं सदस्सता का रिफ्रेस करा।'
+  This profile has a large number of subscriptions. Forcing RSS to avoid rate limiting: 'यहि प्रोफ़ाइल के पास ढेर सब्सक्रिप्शनस है।  RSS का जोर से परयोग कइके रेट लिमिटिंग से बचावा'
+  'Your Subscription list is currently empty. Start adding subscriptions to see them here.': 'तोहाय सदस्सता सूची येह समय खाली अहै। अगर तू आपन सदस्यता इम्पोर्ट करै चाहत हैं तौ तू डेटा सेटिंग्स मा जाइ सकत हौ अउर सदस्सता इम्पोर्ट करै का चुनि सकत हौ या तू एक चैनल हेर सकत हौ अउर उनकै सदस्सता लइ सकत हौ।'
+  Disabled Automatic Fetching: 'तू अपने आप सदस्सता लावै का स्वचालित सदस्यता लावै का बंद केहे अहा। उनका हिंया देखै की ताईं सदस्सता का रिफ्रेस करा।'
   Empty Channels: 'तुम्हार सब्सक्राइब कीन गवा चैनल पै येह समय कवनो वीडियो नाही है।'
   Empty Posts: 'तोहरे सब्सक्राइब किहे चैनलन मा फिलहाल कौनो पोस्ट नाय अहै।'
   Load More Videos: 'अउर वीडियो अपलोड करैं'
@@ -154,10 +130,7 @@ Channels:
   Unsubscribe Prompt: ''
 Trending:
   Trending: ''
-  Default: ''
-  Music: ''
   Gaming: ''
-  Movies: ''
   Trending Tabs: ''
 Most Popular: ''
 Feed:
@@ -254,8 +227,7 @@ User Playlists:
 
     Toast:
       You haven't selected any playlist yet.: ''
-      "{videoCount} video(s) added to 1 playlist": ""
-      "{videoCount} video(s) added to {playlistCount} playlists": ""
+      "Video(s) added to {playlistCount} playlists": ""
   CreatePlaylistPrompt:
     New Playlist Name: ''
     Create: ''
@@ -281,7 +253,6 @@ Settings:
   General Settings:
     General Settings: ''
     Check for Updates: ''
-    Check for Latest Blog Posts: ''
     Fallback to Non-Preferred Backend on Failure: ''
     Enable Search Suggestions: ''
     Open Deep Links In New Window: ''
@@ -443,8 +414,8 @@ Settings:
     Default Playback Rate: ''
     Max Video Playback Rate: ''
     Video Playback Rate Interval: ''
-    Default Video Format:
-      Default Video Format: ''
+    Default Media Format:
+      Default Media Format: ''
       Dash Formats: ''
       Legacy Formats: ''
       Audio Formats: ''
@@ -464,7 +435,8 @@ Settings:
       Enable: ''
       Format Label: ''
       Quality Label: ''
-      Ask Path: ''
+      Modes:
+        Ask Path: ''
       Folder Label: ''
       Folder Button: ''
       File Name Label: ''
@@ -501,7 +473,6 @@ Settings:
     Are you sure you want to remove all your playlists?: ''
   Subscription Settings:
     Subscription Settings: ''
-    Hide Videos on Watch: ''
     Fetch Feeds from RSS: ''
     Fetch Automatically: ''
     'Limit the number of videos displayed for each channel': ''
@@ -541,17 +512,15 @@ Settings:
     Hide Channels Already Exists: ''
     Hide Featured Channels: ''
     Hide Channel Playlists: ''
-    Hide Channel Community: ''
     Hide Channel Home: ''
     Hide Channel Shorts: ''
     Hide Channel Podcasts: ''
     Hide Channel Releases: ''
-    Hide Videos and Playlists Containing Text: ''
-    Hide Videos and Playlists Containing Text Placeholder: ''
+    Hide Videos, Playlists and Channels Containing Text: ''
+    Hide Videos, Playlists and Channels Containing Text Placeholder: ''
     Hide Subscriptions Videos: ''
     Hide Subscriptions Shorts: ''
     Hide Subscriptions Live: ''
-    Hide Subscriptions Community: ''
     Show Added Items: ''
   Data Settings:
     Data Settings: ''
@@ -624,13 +593,6 @@ Settings:
     Hide Unsubscribe Button: ''
     Show Family Friendly Only: ''
     Hide Search Bar: ''
-  Download Settings:
-    Download Settings: ''
-    Ask Download Path: ''
-    Choose Path: ''
-    Download Behavior: ''
-    Download in app: ''
-    Open in web browser: ''
   Experimental Settings:
     Experimental Settings: ''
     Warning: ''
@@ -648,7 +610,6 @@ About:
   About: ''
   Beta: ''
   Source code: ''
-  Licensed under the: ''
   AGPLv3: ''
   Downloads / Changelog: ''
   GitHub releases: ''
@@ -660,15 +621,11 @@ About:
   GitHub issues: ''
   Please check for duplicates before posting: ''
   Website: ''
-  Blog: ''
-  Email: ''
   Mastodon: ''
   Chat on Matrix: ''
-  Please read the: ''
   room rules: ''
   Translate: ''
   Credits: ''
-  FreeTube is made possible by: ''
   these people and projects: ''
   Donate: ''
 
@@ -703,13 +660,12 @@ Profile:
   Subscription List: ''
   Other Channels: ''
   '{number} selected': ''
-  Select All: ''
+  Select All: 'सगरौ चुना'
   Select None: ''
   Delete Selected: ''
   Add Selected To Profile: ''
   No channel(s) have been selected: ''
-  ? This is your primary profile.  Are you sure you want to delete the selected channels?  The
-    same channels will be deleted in any profile they are found in.
+  ? This is your primary profile.  Are you sure you want to delete the selected channels?  The same channels will be deleted in any profile they are found in.
   : ''
   Are you sure you want to delete the selected channels?  This will not delete the channel from any other profile.: ''
   Close Profile Dropdown: ''
@@ -728,8 +684,7 @@ Channel:
   This channel is age-restricted and currently cannot be viewed in FreeTube.: ''
   Channel Tabs: ''
   Videos:
-    Videos: ''
-    This channel does not currently have any videos: ''
+    Videos: 'वीडियोज'
     Sort Types:
       Newest: ''
       Oldest: ''
@@ -765,7 +720,7 @@ Channel:
     Joined: ''
     Location: ''
     Featured Channels: ''
-  Community:
+  Posts:
     This channel currently does not have any posts: ''
     votes: ''
     View Full Post: ''
@@ -802,8 +757,8 @@ Video:
   Loop Playlist: ''
   Shuffle Playlist: ''
   Reverse Playlist: ''
-  Play Next Video: ''
-  Play Previous Video: ''
+  Previous: ''
+  Next: ''
   Watched: ''
   Autoplay: ''
   Starting soon, please refresh the page to check again: ''
@@ -821,9 +776,6 @@ Video:
   'Live Chat is unavailable for this stream. It may have been disabled by the uploader.': ''
   Show Super Chat Comment: ''
   Scroll to Bottom: ''
-  Download Video: ''
-  video only: ''
-  audio only: ''
   Published:
     In less than a minute: ''
   Published on: ''
@@ -937,27 +889,18 @@ Clipboard:
 Chapters:
   Chapters: ''
   Key Moments: ''
-  'Chapters list visible, current chapter: {chapterName}': ''
-  'Chapters list hidden, current chapter: {chapterName}': ''
 
 Mini Player: ''
 Comments:
   Comments: ''
   Click to View Comments: ''
-  Getting comment replies, please wait: ''
   There are no more comments for this video: ''
   Hide Comments: ''
   Top comments: ''
   Newest first: ''
   View {replyCount} replies: ''
   # Context: View 10 Replies, View 1 Reply, View 1 Reply from Owner, View 2 Replies from Owner and others
-  View: ''
-  Hide: ''
-  Replies: ''
   Show More Replies: ''
-  Reply: ''
-  From {channelName}: ''
-  And others: ''
   There are no comments available for this video: ''
   There are no comments available for this post: ''
   Load More Comments: ''
@@ -983,7 +926,7 @@ Tooltips:
     Open Deep Links In New Window: ''
   Player Settings:
     Proxy Videos Through Invidious: ''
-    Default Video Format: ''
+    Default Media Format: ''
     Scroll Playback Rate Over Video Player: ''
     Skip by Scrolling Over Video Player: ''
   External Player Settings:
@@ -996,7 +939,7 @@ Tooltips:
   Distraction Free Settings:
     Hide Channels: ''
     Hide Subscriptions Live: ''
-    Hide Videos and Playlists Containing Text: ''
+    Hide Videos, Playlists and Channels Containing Text: ''
   Subscription Settings:
     Fetch Feeds from RSS: ''
     Fetch Automatically: ''
@@ -1031,10 +974,6 @@ Age Restricted:
   This channel is age restricted: ''
   This video is age restricted: ''
 External link opening has been disabled in the general settings: ''
-'Blocked opening potentially unsafe URL': ''
-Downloading has completed: ''
-Starting download: ''
-Downloading failed: ''
 Screenshot Success: ''
 Screenshot Error: ''
 Channel Hidden: ''
@@ -1089,7 +1028,7 @@ KeyboardShortcutPrompt:
   Focus Secondary Search: ''
   Captions: ''
   Stats: ''
-  Fullscreen: ''
+  Fullscreen: 'टागल पूरी स्क्रीन'
   Picture in Picture: ''
   Large Rewind: ''
   Play: ''
@@ -1102,12 +1041,10 @@ KeyboardShortcutPrompt:
   Take Screenshot: ''
   Minimize Window: ''
   Close Window: ''
-  Restart Window: ''
-  Force Restart Window: ''
-  Toggle Developer Tools: ''
+  Toggle Developer Tools: 'टागल डेबलपर टूल्स'
   Reset Zoom: ''
-  Zoom In: ''
-  Zoom Out: ''
+  Zoom In: 'जूम करा'
+  Zoom Out: 'छोट करा (जूम आउट)'
   Focus Search: ''
   Search in New Window: ''
   Last Frame: ''

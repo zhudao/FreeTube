@@ -1,5 +1,8 @@
 <template>
-  <div class="sideNavMoreOptions">
+  <div
+    ref="menuRef"
+    class="sideNavMoreOptions"
+  >
     <div
       class="navOption moreOptionNav"
       tabindex="0"
@@ -7,8 +10,7 @@
       aria-labelledby="moreNavLabel"
       :title="$t('More')"
       @click="openMoreOptions = !openMoreOptions"
-      @keydown.space.prevent="openMoreOptions = !openMoreOptions"
-      @keydown.enter.prevent="openMoreOptions = !openMoreOptions"
+      @keydown.enter.space.prevent="openMoreOptions = !openMoreOptions"
     >
       <FontAwesomeIcon
         :icon="['fas', 'ellipsis-h']"
@@ -32,6 +34,7 @@
         :title="$t('Channels.Channels')"
         :aria-label="hideLabelsSideBar ? $t('Channels.Channels') : null"
         to="/subscribedchannels"
+        @click="closeMenu"
       >
         <div
           class="thumbnailContainer"
@@ -40,7 +43,6 @@
             :icon="['fas', 'user-check']"
             class="navIcon"
             :class="applyNavIconExpand"
-            fixed-width
           />
         </div>
         <p
@@ -52,11 +54,12 @@
         </p>
       </router-link>
       <router-link
-        v-if="!hideTrendingVideos"
+        v-if=" SUPPORTS_LOCAL_API && trendingVisible"
         class="navOption"
         :title="$t('Trending.Trending')"
         :aria-label="hideLabelsSideBar ? $t('Trending.Trending') : null"
         to="/trending"
+        @click="closeMenu"
       >
         <FontAwesomeIcon
           :icon="['fas', 'fire']"
@@ -77,6 +80,7 @@
         :title="$t('Most Popular')"
         :aria-label="hideLabelsSideBar ? $t('Most Popular') : null"
         to="/popular"
+        @click="closeMenu"
       >
         <FontAwesomeIcon
           :icon="['fas', 'users']"
@@ -96,6 +100,7 @@
         :title="$t('About.About')"
         :aria-label="hideLabelsSideBar ? $t('About.About') : null"
         to="/about"
+        @click="closeMenu"
       >
         <FontAwesomeIcon
           :icon="['fas', 'info-circle']"
@@ -108,6 +113,25 @@
           class="navLabel"
         >
           {{ $t("About.About") }}
+        </p>
+      </router-link>
+      <router-link
+        class="navOption smallMobileOnlyShow"
+        :title="$t('Settings.Settings')"
+        :aria-label="hideLabelsSideBar ? $t('Settings.Settings') : null"
+        to="/settings"
+        @click="closeMenu"
+      >
+        <FontAwesomeIcon
+          :icon="['fas', 'sliders-h']"
+          class="navIcon"
+          :class="applyNavIconExpand"
+        />
+        <p
+          id="settingsNavLabel"
+          class="navLabel"
+        >
+          {{ $t("Settings.Settings") }}
         </p>
       </router-link>
     </div>
@@ -171,15 +195,21 @@
 
 <script setup>
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome'
-import { computed, ref } from 'vue'
+import { computed, ref, onMounted, onBeforeUnmount, useTemplateRef } from 'vue'
+import { useRouter } from 'vue-router'
 
 import store from '../../store/index'
 
+const SUPPORTS_LOCAL_API = process.env.SUPPORTS_LOCAL_API
+
 const openMoreOptions = ref(false)
 
+const menuRef = useTemplateRef('menuRef')
+
 /** @type {import('vue').ComputedRef<boolean>} */
-const hideTrendingVideos = computed(() => {
-  return store.getters.getHideTrendingVideos
+const trendingVisible = computed(() => {
+  return !store.getters.getHideTrendingVideos &&
+    (store.getters.getBackendFallback || store.getters.getBackendPreference === 'local')
 })
 
 /** @type {import('vue').ComputedRef<boolean>} */
@@ -197,6 +227,28 @@ const applyNavIconExpand = computed(() => {
   return {
     navIconExpand: hideLabelsSideBar.value
   }
+})
+
+function closeMenu() {
+  openMoreOptions.value = false
+}
+
+function handleClickOutside(event) {
+  if (openMoreOptions.value && menuRef.value && !menuRef.value.contains(event.target)) {
+    closeMenu()
+  }
+}
+
+const router = useRouter()
+
+onMounted(() => {
+  document.addEventListener('click', handleClickOutside)
+  router.afterEach(() => {
+    closeMenu()
+  })
+})
+onBeforeUnmount(() => {
+  document.removeEventListener('click', handleClickOutside)
 })
 </script>
 

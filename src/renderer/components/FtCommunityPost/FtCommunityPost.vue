@@ -2,38 +2,38 @@
   <div
     class="ft-list-post ft-list-item outside"
     :appearance="appearance"
-    :class="{ list: listType === 'list', grid: listType === 'grid' }"
   >
     <div
       class="author-div"
     >
       <template
-        v-if="authorThumbnails.length > 0"
+        v-if="authorThumbnail"
       >
         <router-link
-          v-if="authorId"
+          v-if="enableChannelLinks && authorId"
           :to="`/channel/${authorId}`"
           tabindex="-1"
           aria-hidden="true"
         >
           <img
-            :src="getBestQualityImage(authorThumbnails)"
+            :src="authorThumbnail"
             class="communityThumbnail"
             alt=""
           >
         </router-link>
         <img
           v-else
-          :src="getBestQualityImage(authorThumbnails)"
+          :src="authorThumbnail"
           class="communityThumbnail"
           alt=""
         >
       </template>
       <p
         class="authorName"
+        dir="auto"
       >
         <router-link
-          v-if="authorId"
+          v-if="authorId && enableChannelLinks"
           :to="`/channel/${authorId}`"
           class="authorNameLink"
         >
@@ -52,13 +52,14 @@
       </p>
     </div>
     <p
+      v-safer-html="postText"
       class="postText"
-      v-html="postText"
+      dir="auto"
     />
     <swiper-container
       v-if="postType === 'multiImage' && postContent.content.length > 0"
       ref="swiperContainerRef"
-      init="false"
+      :init="false"
       class="sliderContainer"
     >
       <swiper-slide
@@ -75,7 +76,7 @@
       </swiper-slide>
     </swiper-container>
     <div
-      v-if="postType === 'image' && postContent.content.length > 0"
+      v-else-if="postType === 'image' && postContent.content.length > 0"
     >
       <img
         :src="getBestQualityImage(postContent.content)"
@@ -84,27 +85,28 @@
       >
     </div>
     <div
-      v-if="postType === 'video'"
+      v-else-if="postType === 'video'"
     >
       <FtListVideo
         v-if="!hideVideo"
         :data="data.postContent.content"
         appearance=""
+        force-list-type="grid"
       />
       <p
         v-else
         class="hiddenVideo"
       >
-        {{ '[' + $t('Channel.Community.Video hidden by FreeTube') + ']' }}
+        {{ '[' + $t('Channel.Posts.Video hidden by FreeTube') + ']' }}
       </p>
     </div>
     <div
-      v-if="postType === 'poll' || postType === 'quiz'"
+      v-else-if="postType === 'poll' || postType === 'quiz'"
     >
       <FtCommunityPoll :data="postContent" />
     </div>
     <div
-      v-if="postType === 'playlist'"
+      v-else-if="postType === 'playlist'"
       class="playlistWrapper"
     >
       <FtListPlaylist
@@ -117,8 +119,8 @@
     >
       <span
         class="likeCount"
-        :title="$tc('Global.Counts.Like Count', voteCount, {count: formattedVoteCount})"
-        :aria-label="$tc('Global.Counts.Like Count', voteCount, {count: formattedVoteCount})"
+        :title="$t('Global.Counts.Like Count', {count: formattedVoteCount}, voteCount)"
+        :aria-label="$t('Global.Counts.Like Count', {count: formattedVoteCount}, voteCount)"
       >
         <FontAwesomeIcon
           class="thumbs-up-icon"
@@ -126,18 +128,19 @@
           aria-hidden="true"
         /> {{ formattedVoteCount }}</span>
       <router-link
-        v-if="isInvidiousAllowed && !singlePost"
+        v-if="!singlePost"
         :to="{
           path: `/post/${postId}`,
           query: authorId ? { authorId } : undefined
         }"
         class="commentsLink"
-        :aria-label="$t('Channel.Community.View Full Post')"
+        :aria-label="$t('Channel.Posts.View Full Post')"
       >
         <span
+          v-if="!hideComments"
           class="commentCount"
-          :title="$tc('Global.Counts.Comment Count', commentCount, {count: formattedCommentCount})"
-          :aria-label="$tc('Global.Counts.Comment Count', commentCount, {count: formattedCommentCount})"
+          :title="$t('Global.Counts.Comment Count', {count: formattedCommentCount}, commentCount)"
+          :aria-label="$t('Global.Counts.Comment Count', {count: formattedCommentCount}, commentCount)"
         >
           <FontAwesomeIcon
             class="comment-count-icon"
@@ -146,15 +149,22 @@
           /> {{ formattedCommentCount }}</span>
       </router-link>
       <span
-        v-else-if="commentCount != null"
+        v-else-if="commentCount != null && !hideComments"
         class="commentCount"
-        :title="$tc('Global.Counts.Comment Count', commentCount, {count: formattedCommentCount})"
-        :aria-label="$tc('Global.Counts.Comment Count', commentCount, {count: formattedCommentCount})"
+        :title="$t('Global.Counts.Comment Count', {count: formattedCommentCount}, commentCount)"
+        :aria-label="$t('Global.Counts.Comment Count', {count: formattedCommentCount}, commentCount)"
       >
         <FontAwesomeIcon
           class="comment-count-icon"
           :icon="['fas', 'comment']"
         /> {{ commentCount }}</span>
+      <FtShareButton
+        v-if="!hideSharingActions"
+        :id="postId"
+        share-target-type="Post"
+        class="shareButton"
+        :size="18"
+      />
     </div>
   </div>
 </template>
@@ -162,20 +172,24 @@
 <script setup>
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome'
 import autolinker from 'autolinker'
+import swiperA11yCssUrl from 'swiper/element/css/a11y'
+import swiperNavigationCssUrl from 'swiper/element/css/navigation'
+import swiperPaginationCssUrl from 'swiper/element/css/pagination'
 import { A11y, Navigation, Pagination } from 'swiper/modules'
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, useTemplateRef } from 'vue'
 
-import FtListVideo from '../ft-list-video/ft-list-video.vue'
-import FtListPlaylist from '../ft-list-playlist/ft-list-playlist.vue'
+import FtListVideo from '../FtListVideo/FtListVideo.vue'
+import FtListPlaylist from '../FtListPlaylist/FtListPlaylist.vue'
 import FtCommunityPoll from '../FtCommunityPoll/FtCommunityPoll.vue'
+import FtShareButton from '../FtShareButton/FtShareButton.vue'
+import { vSaferHtml } from '../../directives/vSaferHtml.js'
 
 import store from '../../store/index'
 
 import {
-  createWebURL,
-  deepCopy,
   formatNumber,
   getRelativeTimeFromDate,
+  isNumberRounded,
 } from '../../helpers/utils'
 import { youtubeImageUrlToInvidious } from '../../helpers/api/invidious'
 
@@ -198,11 +212,6 @@ const props = defineProps({
   },
 })
 
-/** @type {import('vue').ComputedRef<'grid' | 'list'>} */
-const listType = computed(() => {
-  return store.getters.getListType
-})
-
 /** @type {import('vue').ComputedRef<string[]>} */
 const forbiddenTitles = computed(() => {
   if (!props.hideForbiddenTitles) { return [] }
@@ -213,25 +222,23 @@ const hideVideo = computed(() => {
   return forbiddenTitles.value.some((text) => props.data.postContent.content.title?.toLowerCase().includes(text.toLowerCase()))
 })
 
+/** @type {import('vue').ComputedRef<boolean>} */
+const hideSharingActions = computed(() => store.getters.getHideSharingActions)
+
 /** @type {import('vue').ComputedRef<'local' | 'invidious'>} */
 const backendPreference = computed(() => {
   return store.getters.getBackendPreference
 })
 
 /** @type {import('vue').ComputedRef<boolean>} */
-const backendFallback = computed(() => {
-  return store.getters.getBackendFallback
-})
-
-const isInvidiousAllowed = computed(() => {
-  return backendPreference.value === 'invidious' || backendFallback.value
+const hideComments = computed(() => {
+  return store.getters.getHideComments
 })
 
 let postType = ''
 let postText = ''
 let postId = ''
-/** @type {string[]?} */
-let authorThumbnails = null
+let authorThumbnail = ''
 let postContent = ''
 let author = ''
 let authorId = ''
@@ -242,15 +249,13 @@ let commentCount = null
 parseCommunityData()
 
 const formattedCommentCount = computed(() => {
-  if (commentCount != null) {
-    return formatNumber(commentCount)
-  }
-
-  return ''
+  if (commentCount == null) return ''
+  if (props.singlePost) return formatNumber(commentCount)
+  return formatNumber(commentCount, isNumberRounded(commentCount) ? { notation: 'compact' } : undefined)
 })
 
 const formattedVoteCount = computed(() => {
-  return formatNumber(voteCount)
+  return formatNumber(voteCount, voteCount != null && isNumberRounded(voteCount) ? { notation: 'compact' } : undefined)
 })
 
 const publishedText = computed(() => {
@@ -266,12 +271,10 @@ function parseCommunityData() {
     postText = 'Shared post'
     postType = 'text'
 
-    authorThumbnails = ['', 'https://yt3.ggpht.com/ytc/AAUvwnjm-0qglHJkAHqLFsCQQO97G7cCNDuDLldsrn25Lg=s88-c-k-c0x00ffffff-no-rj']
+    authorThumbnail = 'https://yt3.ggpht.com/ytc/AAUvwnjm-0qglHJkAHqLFsCQQO97G7cCNDuDLldsrn25Lg=s88-c-k-c0x00ffffff-no-rj'
 
     if (!process.env.SUPPORTS_LOCAL_API || backendPreference.value === 'invidious') {
-      authorThumbnails.forEach(thumbnail => {
-        thumbnail.url = youtubeImageUrlToInvidious(thumbnail.url)
-      })
+      authorThumbnail = youtubeImageUrlToInvidious(authorThumbnail)
     }
 
     return
@@ -286,18 +289,12 @@ function parseCommunityData() {
   author = props.data.author
   authorId = props.data.authorId
 
-  authorThumbnails = deepCopy(props.data.authorThumbnails)
+  authorThumbnail = getBestQualityImage(props.data.authorThumbnails)
 
   if (!process.env.SUPPORTS_LOCAL_API || backendPreference.value === 'invidious') {
-    authorThumbnails.forEach(thumbnail => {
-      thumbnail.url = youtubeImageUrlToInvidious(thumbnail.url)
-    })
-  } else {
-    authorThumbnails.forEach(thumbnail => {
-      if (thumbnail.url.startsWith('//')) {
-        thumbnail.url = 'https:' + thumbnail.url
-      }
-    })
+    authorThumbnail = youtubeImageUrlToInvidious(authorThumbnail)
+  } else if (authorThumbnail.startsWith('//')) {
+    authorThumbnail = 'https:' + authorThumbnail
   }
 }
 
@@ -314,7 +311,7 @@ function getBestQualityImage(imageArray) {
   return imageArrayCopy[0]?.url?.replace(/-c-fcrop64=[^-]+/i, '') ?? ''
 }
 
-const swiperContainerRef = ref(null)
+const swiperContainerRef = useTemplateRef('swiperContainerRef')
 
 if (postType === 'multiImage' && postContent.content.length > 0) {
   onMounted(() => {
@@ -323,9 +320,9 @@ if (postType === 'multiImage' && postContent.content.length > 0) {
       modules: [A11y, Navigation, Pagination],
 
       injectStylesUrls: [
-        // This file is created with the copy webpack plugin in the web and renderer webpack configs.
-        // If you add more modules, please remember to add their CSS files to the list in webpack config files.
-        createWebURL(`/swiper-${process.env.SWIPER_VERSION}.css`)
+        swiperA11yCssUrl,
+        swiperNavigationCssUrl,
+        swiperPaginationCssUrl
       ],
 
       a11y: true,
@@ -334,7 +331,9 @@ if (postType === 'multiImage' && postContent.content.length > 0) {
         enabled: true,
         clickable: true
       },
-      slidesPerView: 1
+      slidesPerView: 1,
+      // prevents slides from bleeding over due to rounding errors
+      spaceBetween: 10
     }
 
     Object.assign(swiperContainerRef.value, swiperOptions)
@@ -342,6 +341,8 @@ if (postType === 'multiImage' && postContent.content.length > 0) {
     swiperContainerRef.value.initialize()
   })
 }
+
+const enableChannelLinks = computed(() => !store.getters.getDisableChannelLinks)
 </script>
 
 <style scoped src="./FtCommunityPost.scss" lang="scss" />

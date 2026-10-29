@@ -3,61 +3,65 @@
     <FtLoader
       v-if="isLoading"
     />
-    <div
-      v-if="!isLoading && errorChannels.length !== 0"
+    <template
+      v-else
     >
-      <h3> {{ $t("Subscriptions.Error Channels") }}</h3>
-      <FtFlexBox>
-        <FtChannelBubble
-          v-for="channel in errorChannels"
-          :key="channel.id"
-          :channel-name="channel.name"
-          :channel-id="channel.id"
-          :channel-thumbnail="channel.thumbnail"
-        />
+      <div
+        v-if="errorChannels.length !== 0"
+      >
+        <h3> {{ $t("Subscriptions.Error Channels") }}</h3>
+        <FtFlexBox>
+          <FtChannelBubble
+            v-for="channel in errorChannels"
+            :key="channel.id"
+            :channel-name="channel.name"
+            :channel-id="channel.id"
+            :channel-thumbnail="channel.thumbnail"
+          />
+        </FtFlexBox>
+      </div>
+      <FtFlexBox
+        v-if="activeVideoList.length === 0"
+      >
+        <p
+          v-if="!activeProfileHasSubscriptions"
+          class="message"
+        >
+          {{ $t("Subscriptions['Your Subscription list is currently empty. Start adding subscriptions to see them here.']") }}
+        </p>
+        <p
+          v-else-if="!fetchSubscriptionsAutomatically && !attemptedFetch"
+          class="message"
+        >
+          {{ $t("Subscriptions.Disabled Automatic Fetching") }}
+        </p>
+        <p
+          v-else
+          class="message"
+        >
+          {{ isCommunity ? $t("Subscriptions.Empty Posts") : $t("Subscriptions.Empty Channels") }}
+        </p>
       </FtFlexBox>
-    </div>
-    <FtFlexBox
-      v-if="!isLoading && activeVideoList.length === 0"
-    >
-      <p
-        v-if="!activeProfileHasSubscriptions"
-        class="message"
-      >
-        {{ $t("Subscriptions['Your Subscription list is currently empty. Start adding subscriptions to see them here.']") }}
-      </p>
-      <p
-        v-else-if="!fetchSubscriptionsAutomatically && !attemptedFetch"
-        class="message"
-      >
-        {{ $t("Subscriptions.Disabled Automatic Fetching") }}
-      </p>
-      <p
+      <FtElementList
         v-else
-        class="message"
+        :data="activeVideoList"
+        :use-channels-hidden-preference="false"
+        :display="isCommunity ? 'list' : ''"
+      />
+      <FtAutoLoadNextPageWrapper
+        v-if="videoList.length > dataLimit"
+        @load-next-page="increaseLimit"
       >
-        {{ isCommunity ? $t("Subscriptions.Empty Posts") : $t("Subscriptions.Empty Channels") }}
-      </p>
-    </FtFlexBox>
-    <FtElementList
-      v-if="!isLoading && activeVideoList.length > 0"
-      :data="activeVideoList"
-      :use-channels-hidden-preference="false"
-      :display="isCommunity ? 'list' : ''"
-    />
-    <FtAutoLoadNextPageWrapper
-      v-if="!isLoading && videoList.length > dataLimit"
-      @load-next-page="increaseLimit"
-    >
-      <FtFlexBox>
-        <FtButton
-          :label="isCommunity ? $t('Subscriptions.Load More Posts') : $t('Subscriptions.Load More Videos')"
-          background-color="var(--primary-color)"
-          text-color="var(--text-with-main-color)"
-          @click="increaseLimit"
-        />
-      </FtFlexBox>
-    </FtAutoLoadNextPageWrapper>
+        <FtFlexBox>
+          <FtButton
+            :label="isCommunity ? $t('Subscriptions.Load More Posts') : $t('Subscriptions.Load More Videos')"
+            background-color="var(--primary-color)"
+            text-color="var(--text-with-main-color)"
+            @click="increaseLimit"
+          />
+        </FtFlexBox>
+      </FtAutoLoadNextPageWrapper>
+    </template>
 
     <FtRefreshWidget
       :disable-refresh="isLoading || !activeProfileHasSubscriptions"
@@ -71,13 +75,13 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 
-import FtAutoLoadNextPageWrapper from '../ft-auto-load-next-page-wrapper/ft-auto-load-next-page-wrapper.vue'
-import FtButton from '../ft-button/ft-button.vue'
-import FtChannelBubble from '../ft-channel-bubble/ft-channel-bubble.vue'
+import FtAutoLoadNextPageWrapper from '../FtAutoLoadNextPageWrapper.vue'
+import FtButton from '../FtButton/FtButton.vue'
+import FtChannelBubble from '../FtChannelBubble/FtChannelBubble.vue'
 import FtElementList from '../FtElementList/FtElementList.vue'
 import FtFlexBox from '../ft-flex-box/ft-flex-box.vue'
-import FtLoader from '../ft-loader/ft-loader.vue'
-import FtRefreshWidget from '../ft-refresh-widget/ft-refresh-widget.vue'
+import FtLoader from '../FtLoader/FtLoader.vue'
+import FtRefreshWidget from '../FtRefreshWidget/FtRefreshWidget.vue'
 
 import store from '../../store/index'
 
@@ -125,10 +129,10 @@ const subscriptionLimit = sessionStorage.getItem('subscriptionLimit')
 const dataLimit = ref(subscriptionLimit !== null ? parseInt(subscriptionLimit) : props.initialDataLimit)
 
 const activeVideoList = computed(() => {
-  if (props.videoList.length < dataLimit.value) {
-    return props.videoList
+  if (filteredVideoList.value.length < dataLimit.value) {
+    return filteredVideoList.value
   } else {
-    return props.videoList.slice(0, dataLimit.value)
+    return filteredVideoList.value.slice(0, dataLimit.value)
   }
 })
 
@@ -141,6 +145,61 @@ const fetchSubscriptionsAutomatically = computed(() => {
   return store.getters.getFetchSubscriptionsAutomatically
 })
 
+const historyCacheById = computed(() => {
+  return store.getters.getHistoryCacheById
+})
+
+const hideWatchedSubs = computed(() => {
+  return store.getters.getHideWatchedSubs
+})
+
+const onlyShowLatestFromChannel = computed(() => {
+  return store.getters.getOnlyShowLatestFromChannel
+})
+
+const onlyShowLatestFromChannelNumber = computed(() => {
+  return store.getters.getOnlyShowLatestFromChannelNumber
+})
+
+const filteredVideoList = computed(() => {
+  if (props.isCommunity) {
+    return props.videoList
+  }
+
+  let videoList = props.videoList
+
+  if (hideWatchedSubs.value) {
+    videoList = videoList.filter((video) => {
+      return historyCacheById.value[video.videoId] === undefined
+    })
+  }
+
+  if (onlyShowLatestFromChannel.value) {
+    const authors = new Map()
+    videoList = videoList.filter((video) => {
+      if (!video.authorId) {
+        return true
+      }
+
+      if (!authors.has(video.authorId)) {
+        authors.set(video.authorId, 1)
+        return true
+      } else {
+        const currentVideos = authors.get(video.authorId)
+
+        if (currentVideos < onlyShowLatestFromChannelNumber.value) {
+          authors.set(video.authorId, currentVideos + 1)
+          return true
+        }
+      }
+
+      return false
+    })
+  }
+
+  return videoList
+})
+
 function increaseLimit() {
   dataLimit.value += props.initialDataLimit
   sessionStorage.setItem('subscriptionLimit', dataLimit.value.toFixed(0))
@@ -150,7 +209,7 @@ function increaseLimit() {
  * @param {KeyboardEvent} event
  */
 function keyboardShortcutHandler(event) {
-  if (event.ctrlKey || document.activeElement.classList.contains('ft-input')) {
+  if (document.activeElement.classList.contains('ft-input')) {
     return
   }
   // Avoid handling events due to user holding a key (not released)

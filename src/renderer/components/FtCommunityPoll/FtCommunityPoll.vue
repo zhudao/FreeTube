@@ -3,8 +3,7 @@
     <div
       class="vote-count"
     >
-      <!-- Format the votes to be split by commas ie. 1000 -> 1,000 -->
-      {{ $t('Channel.Community.votes', {votes: formattedVotes}) }}
+      {{ $t('Channel.Posts.votes', {votes: formattedVotes}) }}
     </div>
     <div
       v-for="(choice, index) in data.content"
@@ -12,7 +11,7 @@
     >
       <div
         v-if="data.type === 'quiz'"
-        class="option quiz-option"
+        class="option"
         :class="revealAnswer && choice.isCorrect ? 'correct-option' : ''"
       >
         <span class="empty-circle">
@@ -20,13 +19,14 @@
         </span>
         <div
           class="option-text"
+          dir="auto"
         >
           {{ choice.text }}
         </div>
       </div>
       <div
         v-else
-        class="option poll-option"
+        class="option"
       >
         <span class="empty-circle" />
         <img
@@ -34,7 +34,10 @@
           :src="findSmallestPollImage(choice.image)"
           alt=""
         >
-        <div class="option-text">
+        <div
+          class="option-text"
+          dir="auto"
+        >
           {{ choice.text }}
         </div>
       </div>
@@ -45,20 +48,19 @@
       tabindex="0"
       role="button"
       @click="revealAnswer = !revealAnswer"
-      @keydown.enter.prevent="revealAnswer = !revealAnswer"
-      @keydown.space.prevent="revealAnswer = !revealAnswer"
+      @keydown.enter.space.prevent="revealAnswer = !revealAnswer"
     >
       <div
         v-if="!revealAnswer"
         class="option-text"
       >
-        <FontAwesomeIcon :icon="['fas', 'eye']" /> {{ $t('Channel.Community.Reveal Answers') }}
+        <FontAwesomeIcon :icon="['fas', 'eye']" /> {{ $t('Channel.Posts.Reveal Answers') }}
       </div>
       <div
         v-else
         class="option-text"
       >
-        <FontAwesomeIcon :icon="['fas', 'eye-slash']" /> {{ $t('Channel.Community.Hide Answers') }}
+        <FontAwesomeIcon :icon="['fas', 'eye-slash']" /> {{ $t('Channel.Posts.Hide Answers') }}
       </div>
     </div>
   </div>
@@ -68,7 +70,7 @@
 import { computed, ref } from 'vue'
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome'
 
-import { formatNumber } from '../../helpers/utils'
+import { formatNumber, isNumberRounded } from '../../helpers/utils'
 
 const props = defineProps({
   data: {
@@ -78,7 +80,8 @@ const props = defineProps({
 })
 
 const formattedVotes = computed(() => {
-  return formatNumber(props.data.totalVotes)
+  const votes = props.data.totalVotes
+  return formatNumber(votes, votes != null && isNumberRounded(votes) ? { notation: 'compact' } : undefined)
 })
 
 const revealAnswer = ref(false)
